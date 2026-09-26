@@ -11,11 +11,12 @@ import {
   DollarSign,
   Tag,
   Sparkles,
-  Pencil
+  Pencil,
+  AlertTriangle
 } from 'lucide-react';
 
 export default function ModalCobro({ isOpen, onClose, turno, onConfirmarCobro }) {
-  const { articulos, descontarStock } = useArticulos();
+  const { articulos, ajustarStock } = useArticulos();
   const { precioBaseCancha } = useTurnos();
 
   // Monto base de la cancha: viene de Configuración y es editable por turno
@@ -35,6 +36,7 @@ export default function ModalCobro({ isOpen, onClose, turno, onConfirmarCobro })
   // Sub-modal buscador rápido de Kiosco
   const [jugadorKioscoActivo, setJugadorKioscoActivo] = useState(null);
   const [busquedaKiosco, setBusquedaKiosco] = useState('');
+  const [avisoStock, setAvisoStock] = useState(null);
   const searchInputRef = useRef(null);
 
   // Inicializar o ajustar jugadores cuando cambia la división
@@ -72,6 +74,7 @@ export default function ModalCobro({ isOpen, onClose, turno, onConfirmarCobro })
     setMontoGasto('');
     setJugadorKioscoActivo(null);
     setBusquedaKiosco('');
+    setAvisoStock(null);
     setDivision(4);
   }, [isOpen, turno, precioBaseCancha]);
 
@@ -122,38 +125,50 @@ export default function ModalCobro({ isOpen, onClose, turno, onConfirmarCobro })
     setGastosCompartidos((prev) => prev.filter((g) => g.id !== id));
   };
 
-  // Agregar ítem de Kiosco a un jugador
+  // Agregar ítem de Kiosco a un jugador.
+  // OJO: acá NO se toca el stock. Se descuenta recién en `confirmarVenta`, para
+  // que cerrar el modal sin cobrar no haga desaparecer producto del inventario.
   const agregarItemAJugador = (articulo) => {
     if (jugadorKioscoActivo === null) return;
+
+    const stockDisponible = Number(articulos.find((a) => a.id === articulo.id)?.stock) || 0;
+    const yaEnCarrito = jugadores
+      .find((j) => j.id === jugadorKioscoActivo)
+      ?.itemsKiosco.find((it) => it.id === articulo.id)?.cantidad || 0;
+
+    if (stockDisponible <= yaEnCarrito) {
+      setAvisoStock(
+        stockDisponible === 0
+          ? `No queda stock de "${articulo.nombre}".`
+          : `Sólo quedan ${stockDisponible} un. de "${articulo.nombre}".`
+      );
+      return;
+    }
+
+    setAvisoStock(null);
 
     setJugadores((prev) =>
       prev.map((jug) => {
         if (jug.id !== jugadorKioscoActivo) return jug;
 
         const existente = jug.itemsKiosco.find((it) => it.id === articulo.id);
-        let itemsActualizados;
-        if (existente) {
-          itemsActualizados = jug.itemsKiosco.map((it) =>
-            it.id === articulo.id ? { ...it, cantidad: it.cantidad + 1 } : it
-          );
-        } else {
-          itemsActualizados = [
-            ...jug.itemsKiosco,
-            { id: articulo.id, nombre: articulo.nombre, precio: articulo.precio, cantidad: 1 },
-          ];
-        }
+        const itemsActualizados = existente
+          ? jug.itemsKiosco.map((it) =>
+              it.id === articulo.id ? { ...it, cantidad: it.cantidad + 1 } : it
+            )
+          : [
+              ...jug.itemsKiosco,
+              { id: articulo.id, nombre: articulo.nombre, precio: articulo.precio, cantidad: 1 },
+            ];
         return { ...jug, itemsKiosco: itemsActualizados };
       })
     );
-
-    // Descontar del inventario
-    descontarStock(articulo.id, 1);
 
     // Cerrar buscador rápido al seleccionar
     setJugadorKioscoActivo(null);
   };
 
-  // Quitar ítem de Kiosco de un jugador
+  // Quitar ítem de Kiosco de un jugador (tampoco toca el stock: nunca se cobró)
   const quitarItemDeJugador = (jugadorId, itemId) => {
     setJugadores((prev) =>
       prev.map((jug) => {
@@ -164,6 +179,20 @@ export default function ModalCobro({ isOpen, onClose, turno, onConfirmarCobro })
         };
       })
     );
+  };
+
+  // Descuenta el stock de todo lo que se cobró. Se llama UNA vez, cuando el
+  // cobro se confirma, no al agregar al carrito.
+  const descontarStockCobrado = async (listaJugadores) => {
+    for (const jug of listaJugadores) {
+      for (const item of jug.itemsKiosco) {
+        try {
+          await ajustarStock(item.id, -item.cantidad);
+        } catch (err) {
+          console.error(`[ModalCobro] No se pudo descontar "${item.nombre}":`, err);
+        }
+      }
+    }
   };
 
   // Payload que se guarda en el turno al confirmar el cobro
@@ -195,7 +224,8 @@ export default function ModalCobro({ isOpen, onClose, turno, onConfirmarCobro })
 
       // Si todos quedaron cobrados, liquidamos el turno
       if (actualizados.every((j) => j.pagado)) {
-        setTimeout(() => {
+        setTimeout(async () => {
+          await descontarStockCobrado(actualizados);
           onConfirmarCobro(turno.id, construirDetalleCobro(actualizados));
           onClose();
         }, 400);
@@ -206,13 +236,12 @@ export default function ModalCobro({ isOpen, onClose, turno, onConfirmarCobro })
   };
 
   // Cobrar Todo Junto (botón maestro)
-  const cobrarTodoJunto = () => {
+  const cobrarTodoJunto = async () => {
     const todosPagados = jugadores.map((jug) => ({ ...jug, pagado: true }));
     setJugadores(todosPagados);
-    setTimeout(() => {
-      onConfirmarCobro(turno.id, construirDetalleCobro(todosPagados));
-      onClose();
-    }, 300);
+    await descontarStockCobrado(todosPagados);
+    onConfirmarCobro(turno.id, construirDetalleCobro(todosPagados));
+    onClose();
   };
 
   // Filtrado en vivo de artículos para el sub-modal de Kiosco
@@ -654,6 +683,12 @@ export default function ModalCobro({ isOpen, onClose, turno, onConfirmarCobro })
                     className="w-full pl-10 pr-4 py-3 sm:py-2.5 text-base sm:text-sm bg-slate-50 border border-slate-200 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all"
                   />
                 </div>
+                {avisoStock && (
+                  <p className="mt-2.5 flex items-start gap-2 text-[11px] font-semibold text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-2">
+                    <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-px" />
+                    {avisoStock}
+                  </p>
+                )}
               </div>
 
               {/* Lista filtrada de artículos */}

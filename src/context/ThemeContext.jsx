@@ -1,10 +1,10 @@
-import { createContext, useContext, useState, useEffect } from 'react';
+import { createContext, useContext, useState, useEffect, useMemo } from 'react';
 
 const ThemeContext = createContext();
 
-export function ThemeProvider({ children }) {
-  const VALID_THEMES = ['pro', 'cyan', 'rose'];
+const VALID_THEMES = ['pro', 'cyan', 'rose'];
 
+export function ThemeProvider({ children }) {
   const [theme, setTheme] = useState(() => {
     const saved = localStorage.getItem('puntoexe-theme');
     return VALID_THEMES.includes(saved) ? saved : 'pro';
@@ -18,18 +18,12 @@ export function ThemeProvider({ children }) {
 
   useEffect(() => {
     const saved = localStorage.getItem('puntoexe-theme');
-    if (saved && VALID_THEMES.includes(saved)) {
-      setTheme(saved);
-    } else {
-      setTheme('pro');
-    }
+    setTheme(VALID_THEMES.includes(saved) ? saved : 'pro');
   }, []);
 
-  return (
-    <ThemeContext.Provider value={{ theme, changeTheme }}>
-      {children}
-    </ThemeContext.Provider>
-  );
+  const value = useMemo(() => ({ theme, changeTheme }), [theme]);
+
+  return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
 }
 
 export function useTheme() {

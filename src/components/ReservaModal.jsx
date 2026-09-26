@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useTurnos } from '../context/TurnosContext';
 import { calcularHoraFin } from '../utils/timeCalculations';
-import { MessageCircle, CheckCircle, X, MapPin, CalendarDays, Clock } from 'lucide-react';
+import { MessageCircle, CheckCircle, X, MapPin, CalendarDays, Clock, AlertTriangle } from 'lucide-react';
 
 export default function ReservaModal({ isOpen, onClose, datosReserva, onSuccess }) {
   const { agregarTurno } = useTurnos();
@@ -9,6 +9,7 @@ export default function ReservaModal({ isOpen, onClose, datosReserva, onSuccess 
   const [apellido, setApellido] = useState('');
   const [telefono, setTelefono] = useState('');
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
   const [paso, setPaso] = useState(1);
   const [turnoInsertado, setTurnoInsertado] = useState(null);
 
@@ -18,6 +19,7 @@ export default function ReservaModal({ isOpen, onClose, datosReserva, onSuccess 
       setApellido('');
       setTelefono('');
       setLoading(false);
+      setError(null);
       setPaso(1);
       setTurnoInsertado(null);
     }
@@ -29,27 +31,39 @@ export default function ReservaModal({ isOpen, onClose, datosReserva, onSuccess 
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    setError(null);
     setLoading(true);
-    const horaFin = calcularHoraFin(horaInicio, duracion);
+
     try {
-      const payload = {
+      const horaFin = calcularHoraFin(horaInicio, duracion);
+
+      // Se espera el INSERT: el token de cancelación sólo sirve si el turno
+      // quedó realmente guardado en la base.
+      const data = await agregarTurno({
         cancha_id: cancha.id,
         cancha_nombre: cancha.nombre,
         fecha,
         hora_inicio: horaInicio,
         hora_fin: horaFin,
-        duracion_minutos: duracion,
-        cliente_nombre: nombre,
-        cliente_apellido: apellido,
-        cliente_telefono: telefono,
+        duracion_minutos: Number(duracion),
+        cliente_nombre: nombre.trim(),
+        cliente_apellido: apellido.trim(),
+        cliente_telefono: telefono.trim(),
         estado: 'confirmado',
-        origen: 'cliente'
-      };
-      const data = agregarTurno(payload);
+        origen: 'cliente',
+      });
+
+      if (!data) throw new Error('No se pudo guardar la reserva');
+
       setTurnoInsertado(data);
       setPaso(2);
     } catch (err) {
-      console.error('Error inesperado:', err);
+      console.error('Error al crear la reserva:', err);
+      setError(
+        err?.message?.includes('fetch')
+          ? 'Sin conexión con el servidor. Revisá tu internet e intentá de nuevo.'
+          : 'No pudimos registrar la reserva. Intentá de nuevo en un momento.'
+      );
     } finally {
       setLoading(false);
     }
@@ -159,7 +173,14 @@ export default function ReservaModal({ isOpen, onClose, datosReserva, onSuccess 
                 />
               </div>
 
-              <div className="flex gap-3 pt-3">
+              {error && (
+              <div className="flex items-start gap-2.5 p-3.5 bg-red-50 border border-red-200 rounded-xl">
+                <AlertTriangle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+                <p className="text-xs font-semibold text-red-700 leading-relaxed">{error}</p>
+              </div>
+            )}
+
+            <div className="flex gap-3 pt-3">
                 <button
                   type="button"
                   onClick={onClose}

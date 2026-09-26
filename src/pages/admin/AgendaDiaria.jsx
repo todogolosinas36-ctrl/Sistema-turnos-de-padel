@@ -1,6 +1,5 @@
-import { useState, useEffect, useCallback } from 'react';
-import { supabase } from '../../lib/supabaseClient';
-import { generarBloquesHorarios } from '../../utils/dateHelpers';
+import { useState, useEffect, useMemo } from 'react';
+import { generarBloquesHorarios, hoyISO, sumarDias } from '../../utils/dateHelpers';
 import { calcularHoraFin } from '../../utils/timeCalculations';
 import { useTurnos } from '../../context/TurnosContext';
 import ModalCobro from '../../components/ModalCobro';
@@ -10,25 +9,19 @@ import {
 } from 'lucide-react';
 
 const DURACION = 30;
-const incluyeManana = localStorage.getItem('puntoexe-manana') === 'true';
-const HORA_INICIO = incluyeManana ? '08:00' : '14:00';
 
-/* Plantilla de la matriz: en mobile la columna de hora se angosta para
-   dejar respirar a las dos canchas dentro de una pantalla de 375px. */
-const GRID_TPL = 'grid grid-cols-[52px_1fr_1fr] sm:grid-cols-[80px_1fr_1fr]';
-
-const CANCHAS = [
-  {
-    id: 'roja',
-    nombre: 'Alfombra Roja',
-    dot: 'bg-red-500',
-  },
-  {
-    id: 'verde',
-    nombre: 'Alfombra Verde',
-    dot: 'bg-green-500',
-  },
-];
+/* La grilla se arma dinámicamente según cuántas canchas haya: antes estaba
+   cableada a 2 (grid de 3 columnas y headers "Cancha 1/2"), así que una
+   tercera cancha no aparecía nunca. */
+const grillaDe = (cantCanchas) => {
+  const fracciones = Array(cantCanchas).fill('1fr').join(' ');
+  const anchoHora = cantCanchas > 2 ? '44px' : '52px';
+  return {
+    celdas: `grid-cols-[${anchoHora}_${fracciones}]`,
+    completo: `sm:grid-cols-[80px_${fracciones}]`,
+    anchoHora,
+  };
+};
 
 /* ─── Estilos por estado del turno ─── */
 const ESTADO_ESTILOS = {
@@ -46,17 +39,10 @@ const ESTADO_ESTILOS = {
     badge: 'bg-emerald-200/60 text-emerald-700',
     label: 'Pagado ✓',
   },
-  fijo: {
-    bg: 'bg-amber-50',
-    border: 'border-amber-500',
-    text: 'text-amber-900',
-    badge: 'bg-amber-200/80 text-amber-900',
-    label: 'Abonado (Fijo)',
-  },
 };
 
 /* ─── Modal de carga rápida ─── */
-function ModalCargaRapida({ bloque, cancha, fecha, turnos, onClose, onConfirm }) {
+function ModalCargaRapida({ bloque, cancha, fecha, turnos, horaApertura, onClose, onConfirm }) {
   const [nombre, setNombre] = useState('');
   const [telefono, setTelefono] = useState('');
   const [duracion, setDuracion] = useState('90');
@@ -91,7 +77,7 @@ function ModalCargaRapida({ bloque, cancha, fecha, turnos, onClose, onConfirm })
   };
 
   const haySuperposicion = isOverlapping(horaInicio, horaFin);
-  const horariosPosibles = generarBloquesHorarios(HORA_INICIO, '23:30', 30).filter(b => {
+  const horariosPosibles = generarBloquesHorarios(horaApertura, '23:30', 30).filter(b => {
     const [bh, bm] = b.split(':').map(Number);
     return bh * 60 + bm + 60 <= 1440;
   });
@@ -100,20 +86,26 @@ function ModalCargaRapida({ bloque, cancha, fecha, turnos, onClose, onConfirm })
     e.preventDefault();
     if (haySuperposicion) return;
     setSaving(true);
-    onConfirm({
-      cancha_id: cancha.dbId || cancha.id,
-      cancha_nombre: cancha.nombre,
-      cancha: cancha.nombre,
-      fecha,
-      hora_inicio: horaInicio,
-      hora_fin: horaFin,
-      duracion_minutos: parseInt(duracion, 10),
-      cliente_nombre: nombre,
-      cliente_apellido: '',
-      cliente_telefono: telefono,
-      estado: 'confirmado',
-      origen: 'admin'
-    });
+    try {
+      await onConfirm({
+        cancha_id: cancha.id,
+        cancha_nombre: cancha.nombre,
+        fecha,
+        hora_inicio: horaInicio,
+        hora_fin: horaFin,
+        duracion_minutos: parseInt(duracion, 10),
+        cliente_nombre: nombre.trim(),
+        cliente_apellido: '',
+        cliente_telefono: telefono.trim(),
+        estado: 'confirmado',
+        origen: 'admin',
+      });
+    } catch (err) {
+      console.error('[Agenda] No se pudo crear el turno:', err);
+      alert('No se pudo guardar el turno. Intentá de nuevo.');
+    } finally {
+      setSaving(false);
+    }
   };
 
   const inputCls =
@@ -325,7 +317,7 @@ const calcularHoraFinReal = (horaInicio, duracionMinutos) => {
   return `${horasStr}:${minutosStr}`;
 };
 
-function BloqueOcupado({ turno, onAbrirCobro }) {
+function BloqueOcupado({ turno, colorHex, onAbrirCobro }) {
   const { cambiarEstado } = useTurnos();
   const [showMenu, setShowMenu] = useState(false);
   const estado = turno.estado;
@@ -338,29 +330,31 @@ function BloqueOcupado({ turno, onAbrirCobro }) {
   };
 
   const handleCancelar = async () => {
-    cambiarEstado(turno.id, 'cancelado');
+    await cambiarEstado(turno.id, 'cancelado');
   };
 
   const span = (turno.duracion_minutos || 90) / 30;
   const heightPercent = span * 100;
 
-  const isRoja = turno.cancha_nombre?.includes('Roja') || turno.cancha?.includes('Roja');
-  const isVerde = turno.cancha_nombre?.includes('Verde') || turno.cancha?.includes('Verde');
-  
-  // Si es turno fijo (abono), resaltamos con borde y fondo ámbar/naranja sutil
-  const colorCls = turno.esFijo
+  /* El color sale de la fila `canchas` de la base, no de adivinar por el
+     nombre ("Roja"/"Verde"), que dejaba de funcionar con una tercera cancha. */
+  const esAbono = Boolean(turno.es_fijo);
+  const colorCls = esAbono
     ? 'bg-amber-50 border-amber-500 text-amber-900 ring-1 ring-amber-400/30'
-    : isRoja
-    ? 'bg-red-50 border-red-500 text-red-900'
-    : isVerde
-    ? 'bg-green-50 border-green-500 text-green-900'
-    : 'bg-blue-50 border-blue-500 text-blue-900';
+    : 'text-stone-900';
+
+  const estiloColor = esAbono
+    ? undefined
+    : {
+        backgroundColor: `${colorHex || '#3f3f46'}1f`,
+        borderLeftColor: colorHex || '#52525b',
+      };
 
   return (
     <>
       <div
         className={`absolute left-0 right-0 top-0 m-1 sm:m-1.5 rounded-lg p-1.5 sm:p-3 flex flex-col items-center justify-center text-center border-l-4 shadow-sm transition-all active:scale-[0.98] hover:shadow-md cursor-pointer overflow-hidden z-20 select-none ${colorCls}`}
-        style={{ height: `calc(${heightPercent}% - 12px)` }}
+        style={{ height: `calc(${heightPercent}% - 12px)`, ...estiloColor }}
         onClick={() => {
           if (turno.estado !== 'pagado') {
             onAbrirCobro(turno);
@@ -388,13 +382,13 @@ function BloqueOcupado({ turno, onAbrirCobro }) {
         {/* Estado / Badge diferenciador */}
         <span
           className={`mt-1 sm:mt-2 text-[9px] sm:text-[10px] font-bold px-1.5 py-0.5 rounded-md w-fit leading-none ${
-            turno.esFijo ? 'bg-amber-200/80 text-amber-900' : estilos.badge
+            esAbono ? 'bg-amber-200/80 text-amber-900' : estilos.badge
           }`}
         >
           <span className="sm:hidden">
-            {turno.esFijo ? 'Abono' : estado === 'pagado' ? 'Pagado' : 'Confirmado'}
+            {esAbono ? 'Abono' : estado === 'pagado' ? 'Pagado' : 'Confirmado'}
           </span>
-          <span className="hidden sm:inline">{turno.esFijo ? 'Abonado (Fijo)' : estilos.label}</span>
+          <span className="hidden sm:inline">{esAbono ? 'Abonado (Fijo)' : estilos.label}</span>
         </span>
 
         {/* Botón de menú */}
@@ -422,74 +416,48 @@ function BloqueOcupado({ turno, onAbrirCobro }) {
 
 /* ─── AgendaDiaria (Matriz) ─── */
 export default function AgendaDiaria({ fecha: fechaProp }) {
-  const { obtenerTurnosDelDia, agregarTurno, cambiarEstado } = useTurnos();
-  const [fecha, setFecha] = useState(fechaProp ?? new Date().toISOString().split('T')[0]);
-  const [dbCanchas, setDbCanchas] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const {
+    obtenerTurnosDelDia,
+    agregarTurno,
+    cambiarEstado,
+    canchasActivas,
+    incluyeManana,
+    loading: cargandoContexto,
+    recargar,
+  } = useTurnos();
+
+  const [fecha, setFecha] = useState(fechaProp ?? hoyISO);
   const [modal, setModal] = useState(null);
   const [turnoParaCobro, setTurnoParaCobro] = useState(null);
 
-  const currentIncluyeManana = localStorage.getItem('puntoexe-manana') === 'true';
-  const currentHoraInicio = currentIncluyeManana ? '08:00' : '14:00';
-  const bloques = generarBloquesHorarios(currentHoraInicio, '23:30', DURACION);
+  const horaApertura = incluyeManana ? '08:00' : '14:00';
+  const bloques = useMemo(
+    () => generarBloquesHorarios(horaApertura, '23:30', DURACION),
+    [horaApertura]
+  );
 
-  const fetchData = useCallback(async () => {
-    setLoading(true);
-    try {
-      const { data: canchasData } = await supabase.from('canchas').select('*').order('orden');
-      if (canchasData && canchasData.length > 0) {
-        setDbCanchas(canchasData);
-      }
-    } catch (err) {
-      console.error('Error al cargar agenda:', err);
-    } finally {
-      setLoading(false);
+  const canchas = canchasActivas;
+  const grilla = grillaDe(canchas.length);
+  const loading = cargandoContexto;
+
+  const turnosDelDia = useMemo(() => obtenerTurnosDelDia(fecha), [obtenerTurnosDelDia, fecha]);
+
+  /* Las canchas vienen de la base con su UUID real: ya no hace falta adivinar
+     a qué columna pertenece un turno comparando el texto del nombre. */
+  const turnosPorCancha = useMemo(() => {
+    const mapa = {};
+    for (const cancha of canchas) {
+      mapa[cancha.id] = turnosDelDia.filter(
+        (t) => t.cancha_id === cancha.id || t.cancha_nombre === cancha.nombre
+      );
     }
-  }, []);
-
-  useEffect(() => { fetchData(); }, [fetchData]);
-
-  // Sincronización unificada de turnos (regulares + fijos) para la fecha seleccionada
-  const turnosDelDia = obtenerTurnosDelDia(fecha);
-
-  // Empareja canchas con estilos locales y base de datos
-  const canchasConEstilo = CANCHAS.map((estilo, i) => {
-    const db = dbCanchas[i];
-    return db
-      ? {
-          ...estilo,
-          dbId: db.id,
-          nombre: db.nombre || estilo.nombre,
-          colorHex: db.color_identificador,
-        }
-      : { ...estilo, dbId: estilo.id, nombre: estilo.nombre };
-  });
-
-  const turnosPorCancha = {};
-  canchasConEstilo.forEach((c) => {
-    const key = c.dbId || c.id;
-    turnosPorCancha[key] = turnosDelDia.filter((t) => {
-      const matchDbId = c.dbId && t.cancha_id === c.dbId;
-      const matchLocalId = t.cancha_id === c.id;
-      const matchNombre = t.cancha_nombre === c.nombre || t.cancha === c.nombre;
-      const matchRoja =
-        c.id === 'roja' &&
-        (t.cancha_nombre?.includes('Roja') || t.cancha?.includes('Roja') || t.cancha_id === 'roja');
-      const matchVerde =
-        c.id === 'verde' &&
-        (t.cancha_nombre?.includes('Verde') || t.cancha?.includes('Verde') || t.cancha_id === 'verde');
-      return matchDbId || matchLocalId || matchNombre || matchRoja || matchVerde;
-    });
-  });
+    return mapa;
+  }, [canchas, turnosDelDia]);
 
   // Navegación de fecha
-  const cambiarDia = (delta) => {
-    const d = new Date(fecha + 'T12:00:00');
-    d.setDate(d.getDate() + delta);
-    setFecha(d.toISOString().split('T')[0]);
-  };
+  const cambiarDia = (delta) => setFecha((f) => sumarDias(f, delta));
 
-  const fechaFormateada = new Date(fecha + 'T12:00:00').toLocaleDateString('es-AR', {
+  const fechaFormateada = new Date(`${fecha}T12:00:00`).toLocaleDateString('es-AR', {
     weekday: 'long',
     day: 'numeric',
     month: 'long',
@@ -498,7 +466,7 @@ export default function AgendaDiaria({ fecha: fechaProp }) {
 
   // Estadísticas
   const totalTurnos = Object.values(turnosPorCancha).flat().length;
-  const totalSlots = bloques.length * canchasConEstilo.length;
+  const totalSlots = bloques.length * canchas.length;
 
   return (
     <div className="flex flex-col gap-4 sm:gap-6 flex-1 min-h-0">
@@ -562,7 +530,7 @@ export default function AgendaDiaria({ fecha: fechaProp }) {
             {/* Refresh */}
             <button
               type="button"
-              onClick={fetchData}
+              onClick={recargar}
               disabled={loading}
               className="w-9 h-9 sm:w-8 sm:h-8 rounded-lg border border-slate-200 bg-white hover:bg-slate-100 active:scale-95 flex items-center justify-center text-slate-600 transition-all disabled:opacity-50"
               title="Actualizar"
@@ -575,8 +543,8 @@ export default function AgendaDiaria({ fecha: fechaProp }) {
               type="button"
               onClick={() => {
                 const firstFreeBlock = bloques[0];
-                const firstCancha = canchasConEstilo[0];
-                const targetKey = firstCancha?.dbId || firstCancha?.id;
+                const firstCancha = canchas[0];
+                const targetKey = firstCancha?.id;
                 setModal({
                   bloque: firstFreeBlock,
                   cancha: firstCancha,
@@ -602,18 +570,23 @@ export default function AgendaDiaria({ fecha: fechaProp }) {
           <div className="flex-1 overflow-auto overscroll-contain-smooth">
             <div className="min-w-[320px] sm:min-w-0">
               {/* ─── Cabeceras de la Matriz (X-Axis) ─── */}
-              <div className={`${GRID_TPL} sticky top-0 z-40 border-b border-slate-200 bg-white`}>
-                <div className="sticky left-0 z-10 bg-white border-r border-slate-100 py-2.5 sm:py-3 px-1 sm:px-2 flex items-center justify-center">
+              <div
+                className={`grid ${grilla.celdas} ${grilla.completo} sticky top-0 z-40 border-b border-slate-200 bg-white`}
+              >
+                <div
+                  className="sticky left-0 z-10 bg-white border-r border-slate-100 py-2.5 sm:py-3 px-1 sm:px-2 flex items-center justify-center"
+                  style={{ minWidth: grilla.anchoHora }}
+                >
                   <span className="text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-wider">
                     Hora
                   </span>
                 </div>
 
-                {canchasConEstilo.map((cancha, i) => (
+                {canchas.map((cancha, i) => (
                   <div
                     key={cancha.id}
                     className={`py-2.5 sm:py-3 px-1 text-center min-w-0 ${
-                      i < canchasConEstilo.length - 1 ? 'border-r border-slate-100' : ''
+                      i < canchas.length - 1 ? 'border-r border-slate-100' : ''
                     }`}
                   >
                     <div className="flex items-center justify-center gap-1.5 sm:gap-2 min-w-0">
@@ -637,9 +610,12 @@ export default function AgendaDiaria({ fecha: fechaProp }) {
                 const horaFin = calcularHoraFin(bloque, DURACION);
 
                 return (
-                  <div key={bloque} className={`${GRID_TPL} border-b border-slate-100 group`}>
+                  <div key={bloque} className={`grid ${grilla.celdas} ${grilla.completo} border-b border-slate-100 group`}>
                     {/* Celda de Hora (fija al scrollear en horizontal) */}
-                    <div className="sticky left-0 z-30 border-r border-slate-100 p-1.5 sm:p-2 flex flex-col items-center justify-start bg-slate-50">
+                    <div
+                      className="sticky left-0 z-30 border-r border-slate-100 p-1.5 sm:p-2 flex flex-col items-center justify-start bg-slate-50"
+                      style={{ minWidth: grilla.anchoHora }}
+                    >
                       <span className="text-[11px] sm:text-xs font-bold text-slate-600 tabular-nums">
                         {bloque}
                       </span>
@@ -649,9 +625,8 @@ export default function AgendaDiaria({ fecha: fechaProp }) {
                     </div>
 
                     {/* Celdas de Canchas */}
-                    {canchasConEstilo.map((cancha, i) => {
-                      const targetKey = cancha.dbId || cancha.id;
-                      const turnosCancha = turnosPorCancha[targetKey] ?? [];
+                    {canchas.map((cancha, i) => {
+                      const turnosCancha = turnosPorCancha[cancha.id] ?? [];
                       const turno = turnosCancha.find(
                         (t) => t.hora_inicio?.substring(0, 5) === bloque
                       );
@@ -660,7 +635,7 @@ export default function AgendaDiaria({ fecha: fechaProp }) {
                         <div
                           key={cancha.id}
                           className={`relative min-h-[54px] sm:min-h-[60px] cursor-pointer group hover:bg-slate-50 active:bg-slate-100 transition-colors ${
-                            i < canchasConEstilo.length - 1 ? 'border-r border-slate-100' : ''
+                            i < canchas.length - 1 ? 'border-r border-slate-100' : ''
                           } ${turno ? 'z-10' : 'z-0'}`}
                           onClick={() => {
                             if (!turno) {
@@ -670,7 +645,8 @@ export default function AgendaDiaria({ fecha: fechaProp }) {
                         >
                           {turno ? (
                             <BloqueOcupado
-                              turno={{ ...turno, hora_fin: horaFin, cancha_nombre: cancha.nombre }}
+                              turno={turno}
+                              colorHex={cancha.color_identificador}
                               onAbrirCobro={setTurnoParaCobro}
                             />
                           ) : (
@@ -709,6 +685,10 @@ export default function AgendaDiaria({ fecha: fechaProp }) {
           </div>
         ))}
         <div className="flex items-center gap-1.5">
+          <div className="w-3 h-3 rounded-sm border-l-[3px] border-amber-500 bg-amber-50" />
+          <span className="text-xs font-semibold text-slate-500">Abonado (Fijo)</span>
+        </div>
+        <div className="flex items-center gap-1.5">
           <div className="w-3 h-3 rounded-sm bg-slate-100 border border-dashed border-slate-300" />
           <span className="text-xs font-semibold text-slate-500">Libre</span>
         </div>
@@ -721,9 +701,10 @@ export default function AgendaDiaria({ fecha: fechaProp }) {
           cancha={modal.cancha}
           fecha={fecha}
           turnos={modal.turnos}
+          horaApertura={horaApertura}
           onClose={() => setModal(null)}
-          onConfirm={(nuevoTurno) => {
-            agregarTurno(nuevoTurno);
+          onConfirm={async (nuevoTurno) => {
+            await agregarTurno(nuevoTurno);
             setModal(null);
           }}
         />
@@ -738,8 +719,10 @@ export default function AgendaDiaria({ fecha: fechaProp }) {
           // El 2º argumento trae el monto real, los gastos compartidos y el
           // split por jugador. Antes se descartaba y la Caja no tenía forma
           // de conocer lo cobrado.
-          cambiarEstado(turnoId, 'pagado', detalleCobro || {});
           setTurnoParaCobro(null);
+          cambiarEstado(turnoId, 'pagado', detalleCobro || {}).catch((err) => {
+            console.error('[Agenda] No se pudo registrar el cobro:', err);
+          });
         }}
       />
     </div>

@@ -1,26 +1,29 @@
-import { useState, useEffect } from 'react';
-import { supabase } from '../../lib/supabaseClient';
+import { useState, useMemo, useCallback } from 'react';
 import ReservaModal from '../../components/ReservaModal';
 import { Sparkles, Frown } from 'lucide-react';
 import { useTurnos } from '../../context/TurnosContext';
+import { hoyISO } from '../../utils/dateHelpers';
 
-function generarProximosDias(n = 7) {
+function generarProximosDias(n = 7, desde = hoyISO()) {
   const dias = [];
-  const hoy = new Date();
   const diasSemana = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
   const meses = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
 
+  // Se parsea la fecha ISO a mediodía local para no cruzar de día por UTC.
+  const [y, m, d] = desde.split('-').map(Number);
+  const base = new Date(y, m - 1, d, 12, 0, 0);
+
   for (let i = 0; i < n; i++) {
-    const d = new Date(hoy);
-    d.setDate(hoy.getDate() + i);
-    const yyyy = d.getFullYear();
-    const mm = String(d.getMonth() + 1).padStart(2, '0');
-    const dd = String(d.getDate()).padStart(2, '0');
+    const fecha = new Date(base);
+    fecha.setDate(base.getDate() + i);
+    const yyyy = fecha.getFullYear();
+    const mm = String(fecha.getMonth() + 1).padStart(2, '0');
+    const dd = String(fecha.getDate()).padStart(2, '0');
     dias.push({
       value: `${yyyy}-${mm}-${dd}`,
-      diaNombre: i === 0 ? 'Hoy' : diasSemana[d.getDay()],
-      diaNum: d.getDate(),
-      mes: meses[d.getMonth()],
+      diaNombre: i === 0 ? 'Hoy' : diasSemana[fecha.getDay()],
+      diaNum: fecha.getDate(),
+      mes: meses[fecha.getMonth()],
     });
   }
   return dias;
@@ -29,7 +32,7 @@ function generarProximosDias(n = 7) {
 // Helper de conversión "HH:mm" a minutos totales desde la medianoche
 const timeToMins = (time) => {
   if (!time) return 0;
-  const [h, m] = time.substring(0, 5).split(':').map(Number);
+  const [h, m] = String(time).substring(0, 5).split(':').map(Number);
   return h * 60 + m;
 };
 
@@ -37,63 +40,71 @@ const timeToMins = (time) => {
 const calcularHoraFin = (horaInicio, duracionMinutos) => {
   if (!horaInicio) return '';
   const [horas, minutos] = horaInicio.split(':').map(Number);
-  const totalMinutos = minutos + parseInt(duracionMinutos, 10);
-  const h = Math.floor(totalMinutos / 60);
-  const m = totalMinutos % 60;
-  return `${(horas + h).toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
+  const total = horas * 60 + minutos + parseInt(duracionMinutos, 10);
+  const h = Math.floor(total / 60);
+  const m = total % 60;
+  return `${(h % 24).toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
 };
 
+/** Dos horarios se pisan si el inicio de uno cae dentro del otro. */
+const seSolapan = (iniA, finA, iniB, finB) => iniA < finB && finA > iniB;
+
 export default function Home() {
-  const [fecha, setFecha] = useState(() => {
-    const today = new Date();
-    return today.toISOString().split('T')[0];
-  });
+  const [fecha, setFecha] = useState(hoyISO);
   const [duracion, setDuracion] = useState(90);
-  const [canchas, setCanchas] = useState([]);
-  const [turnosOcupados, setTurnosOcupados] = useState([]);
-  const [loading, setLoading] = useState(true);
   const [reservaActiva, setReservaActiva] = useState(null);
 
-  const { obtenerTurnosDelDia, turnos, turnosFijos } = useTurnos();
+  const { canchasActivas, obtenerTurnosDelDia, incluyeManana, loading } = useTurnos();
 
-  // Sincronización de turnos regulares y fijos de la fecha seleccionada
-  useEffect(() => {
-    const turnosDelDia = obtenerTurnosDelDia(fecha);
-    setTurnosOcupados(turnosDelDia);
-  }, [fecha, turnos, turnosFijos, obtenerTurnosDelDia]);
+  const turnosDelDia = useMemo(
+    () => obtenerTurnosDelDia(fecha),
+    [obtenerTurnosDelDia, fecha]
+  );
 
-  useEffect(() => {
-    async function fetchData() {
-      setLoading(true);
-      try {
-        const { data: resCanchas } = await supabase.from('canchas').select('*').order('orden');
-        if (resCanchas && resCanchas.length > 0) {
-          setCanchas(resCanchas);
-        } else {
-          setCanchas([
-            { id: 'roja', nombre: 'Alfombra Roja', color_identificador: '#ef4444' },
-            { id: 'verde', nombre: 'Alfombra Verde', color_identificador: '#10b981' },
-          ]);
-        }
-      } catch (error) {
-        console.error('Error al cargar datos:', error);
-        setCanchas([
-          { id: 'roja', nombre: 'Alfombra Roja', color_identificador: '#ef4444' },
-          { id: 'verde', nombre: 'Alfombra Verde', color_identificador: '#10b981' },
-        ]);
-      } finally {
-        setLoading(false);
-      }
-    }
-    fetchData();
-  }, [fecha]);
+  const dias = useMemo(() => generarProximosDias(7, fecha < hoyISO() ? hoyISO() : fecha), [fecha]);
 
-  const dias = generarProximosDias(7);
-
-  const incluyeManana = localStorage.getItem('puntoexe-manana') === 'true';
+  const duracionSeleccionada = parseInt(duracion, 10);
   const horaInicioNum = incluyeManana ? 8 : 14;
   const horaFinNum = 23.5;
-  const duracionSeleccionada = parseInt(duracion, 10);
+
+  /* Un turno bloquea la cancha si se superpone con el bloque candidato. */
+  const estaOcupado = useCallback(
+    (cancha, propuestoInicio, propuestoFin) =>
+      turnosDelDia.some((turno) => {
+        const coincideCancha =
+          (cancha.id && turno.cancha_id === cancha.id) ||
+          turno.cancha_nombre === cancha.nombre ||
+          turno.cancha === cancha.nombre;
+        if (!coincideCancha) return false;
+
+        const inicio = timeToMins(turno.hora_inicio);
+        const fin = inicio + (Number(turno.duracion_minutos) || 90);
+        return seSolapan(propuestoInicio, propuestoFin, inicio, fin);
+      }),
+    [turnosDelDia]
+  );
+
+  /* Escaneo en intervalos de 30 minutos evaluando solapamientos. */
+  const canchasConDisponibilidad = useMemo(
+    () =>
+      canchasActivas.map((cancha) => {
+        const bloquesLibres = [];
+        for (let h = horaInicioNum; h <= horaFinNum; h += 0.5) {
+          const horas = Math.floor(h);
+          const minutos = Math.round((h - horas) * 60);
+          const horaStr = `${String(horas).padStart(2, '0')}:${String(minutos).padStart(2, '0')}`;
+
+          const inicio = horas * 60 + minutos;
+          const fin = inicio + duracionSeleccionada;
+          if (fin > 1440) continue; // no se pasa de la medianoche
+          if (!estaOcupado(cancha, inicio, fin)) bloquesLibres.push(horaStr);
+        }
+        return { ...cancha, bloquesLibres };
+      }),
+    [canchasActivas, estaOcupado, horaInicioNum, horaFinNum, duracionSeleccionada]
+  );
+
+  const hayDisponibilidad = canchasConDisponibilidad.some((c) => c.bloquesLibres.length > 0);
 
   return (
     <div className="flex flex-col w-full pb-20">
@@ -181,125 +192,63 @@ export default function Home() {
         </div>
       ) : (
         <div className="px-5 py-4 flex flex-col gap-6">
-          {canchas.length === 0 ? (
+          {canchasActivas.length === 0 ? (
             <div className="text-center py-16 text-zinc-400 text-xs font-semibold">
               No hay canchas registradas en el sistema.
             </div>
+          ) : !hayDisponibilidad ? (
+            <div className="flex flex-col items-center justify-center py-16 text-center bg-zinc-50 rounded-3xl border border-zinc-100">
+              <div className="w-16 h-16 bg-white rounded-full shadow-sm flex items-center justify-center mb-4">
+                <Frown className="w-8 h-8 text-zinc-300" />
+              </div>
+              <h3 className="text-lg font-black text-zinc-700">¡Día completo!</h3>
+              <p className="text-sm text-zinc-500 mt-1 max-w-[250px]">
+                No hay horarios disponibles para esta fecha. Por favor, seleccioná otro día.
+              </p>
+            </div>
           ) : (
-            (() => {
-              // 1. Escaneo continuo en intervalos de 30 minutos (0.5 hs) evaluando colisiones
-              const canchasConDisponibilidad = canchas.map((cancha) => {
-                const horariosDisponibles = [];
-
-                for (let h = horaInicioNum; h <= horaFinNum; h += 0.5) {
-                  const horas = Math.floor(h);
-                  const minutos = Math.round((h - horas) * 60);
-                  const horaStr = `${horas.toString().padStart(2, '0')}:${minutos.toString().padStart(2, '0')}`;
-
-                  const propuestoInicio = horas * 60 + minutos;
-                  const propuestoFin = propuestoInicio + duracionSeleccionada;
-
-                  // 1. Validar que el turno no termine después de la medianoche (24:00 = 1440 min)
-                  if (propuestoFin > 1440) continue;
-
-                  // 2. Validar solapamiento con turnos existentes para esta cancha
-                  const estaOcupado = turnosOcupados.some((turno) => {
-                    const canchaCoincide =
-                      turno.cancha === cancha.nombre ||
-                      turno.cancha_nombre === cancha.nombre ||
-                      turno.cancha_id === cancha.id ||
-                      (cancha.nombre?.toLowerCase().includes('roja') &&
-                        (turno.cancha_id === 'roja' ||
-                          turno.cancha_nombre?.toLowerCase().includes('roja') ||
-                          turno.cancha?.toLowerCase().includes('roja'))) ||
-                      (cancha.nombre?.toLowerCase().includes('verde') &&
-                        (turno.cancha_id === 'verde' ||
-                          turno.cancha_nombre?.toLowerCase().includes('verde') ||
-                          turno.cancha?.toLowerCase().includes('verde')));
-
-                    if (!canchaCoincide) return false;
-
-                    const rawHoraInicio = turno.horaInicio || turno.hora_inicio || turno.horario;
-                    const duracionTurno = parseInt(turno.duracion || turno.duracion_minutos || 90, 10);
-                    const turnoInicio = timeToMins(rawHoraInicio);
-                    const turnoFin = turnoInicio + duracionTurno;
-
-                    // Fórmula estricta de solapamiento: (InicioA < FinB) && (FinA > InicioB)
-                    return propuestoInicio < turnoFin && propuestoFin > turnoInicio;
-                  });
-
-                  if (!estaOcupado) {
-                    horariosDisponibles.push(horaStr);
-                  }
-                }
-
-                return { ...cancha, bloquesLibres: horariosDisponibles };
-              });
-
-              const hayDisponibilidad = canchasConDisponibilidad.some(
-                (c) => c.bloquesLibres.length > 0
-              );
-
-              if (!hayDisponibilidad) {
-                return (
-                  <div className="flex flex-col items-center justify-center py-16 text-center bg-zinc-50 rounded-3xl border border-zinc-100">
-                    <div className="w-16 h-16 bg-white rounded-full shadow-sm flex items-center justify-center mb-4">
-                      <Frown className="w-8 h-8 text-zinc-300" />
-                    </div>
-                    <h3 className="text-lg font-black text-zinc-700">¡Día completo!</h3>
-                    <p className="text-sm text-zinc-500 mt-1 max-w-[250px]">
-                      No hay horarios disponibles para esta fecha. Por favor, seleccioná otro día.
-                    </p>
+            canchasConDisponibilidad
+              .filter((cancha) => cancha.bloquesLibres.length > 0)
+              .map((cancha) => (
+                <div
+                  key={cancha.id}
+                  className="bg-white rounded-2xl border border-zinc-100 p-5 shadow-xs"
+                >
+                  <div className="flex items-center gap-2 mb-4 border-b border-zinc-50 pb-3">
+                    <span
+                      className="w-3 h-3 rounded-full"
+                      style={{ backgroundColor: cancha.color_identificador || '#10b981' }}
+                    />
+                    <h3 className="font-black text-zinc-800 text-lg tracking-tight">
+                      {cancha.nombre}
+                    </h3>
                   </div>
-                );
-              }
 
-              // 2. Renderizado de la grilla con todos los horarios libres encontrados
-              return canchasConDisponibilidad.map((cancha) => {
-                if (cancha.bloquesLibres.length === 0) return null;
-
-                return (
-                  <div
-                    key={cancha.id}
-                    className="bg-white rounded-2xl border border-zinc-100 p-5 shadow-xs"
-                  >
-                    <div className="flex items-center gap-2 mb-4 border-b border-zinc-50 pb-3">
-                      <span
-                        className="w-3 h-3 rounded-full"
-                        style={{ backgroundColor: cancha.color_identificador || '#10b981' }}
-                      />
-                      <h3 className="font-black text-zinc-800 text-lg tracking-tight">
-                        {cancha.nombre}
-                      </h3>
-                    </div>
-
-                    <div className="grid grid-cols-3 sm:grid-cols-4 gap-3">
-                      {cancha.bloquesLibres.map((bloque) => {
-                        const horaFin = calcularHoraFin(bloque, duracion);
-                        return (
-                          <button
-                            key={bloque}
-                            onClick={() =>
-                              setReservaActiva({ cancha, fecha, horaInicio: bloque, duracion })
-                            }
-                            className="py-2 px-1 rounded-xl border border-zinc-200 bg-white hover:border-punto-brand hover:shadow-xs focus:outline-none focus:ring-2 focus:ring-punto-brand transition-all shadow-xs active:scale-95 cursor-pointer group"
-                          >
-                            <div className="flex flex-col items-center justify-center">
-                              <span className="text-sm font-black text-zinc-800 group-hover:text-punto-brand transition-colors">
-                                {bloque}
-                              </span>
-                              <span className="text-[10px] font-bold text-zinc-400 tracking-wide mt-0.5">
-                                HASTA {horaFin}
-                              </span>
-                            </div>
-                          </button>
-                        );
-                      })}
-                    </div>
+                  <div className="grid grid-cols-3 sm:grid-cols-4 gap-3">
+                    {cancha.bloquesLibres.map((bloque) => {
+                      const horaFin = calcularHoraFin(bloque, duracion);
+                      return (
+                        <button
+                          key={bloque}
+                          onClick={() =>
+                            setReservaActiva({ cancha, fecha, horaInicio: bloque, duracion })
+                          }
+                          className="py-2 px-1 rounded-xl border border-zinc-200 bg-white hover:border-punto-brand hover:shadow-xs focus:outline-none focus:ring-2 focus:ring-punto-brand transition-all shadow-xs active:scale-95 cursor-pointer group"
+                        >
+                          <div className="flex flex-col items-center justify-center">
+                            <span className="text-sm font-black text-zinc-800 group-hover:text-punto-brand transition-colors">
+                              {bloque}
+                            </span>
+                            <span className="text-[10px] font-bold text-zinc-400 tracking-wide mt-0.5">
+                              HASTA {horaFin}
+                            </span>
+                          </div>
+                        </button>
+                      );
+                    })}
                   </div>
-                );
-              });
-            })()
+                </div>
+              ))
           )}
         </div>
       )}

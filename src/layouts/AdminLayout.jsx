@@ -12,6 +12,8 @@ import {
   Menu,
   X,
   LogOut,
+  Coffee,
+  AlertTriangle,
 } from 'lucide-react';
 import LogoPadel from '../components/LogoPadel';
 import { useTheme } from '../context/ThemeContext';
@@ -22,6 +24,7 @@ import { themes } from '../utils/themeConfig';
 const NAV_ITEMS = [
   { label: 'Dashboard', path: '/admin', icon: LayoutDashboard, exact: true },
   { label: 'Grilla de Turnos', path: '/admin/grilla', icon: CalendarDays },
+  { label: 'Cantina', path: '/admin/cantina', icon: Coffee },
   { label: 'Artículos', path: '/admin/articulos', icon: Package },
   { label: 'Turnos Fijos', path: '/admin/turnos-fijos', icon: CalendarRange },
   { label: 'Caja Diaria', path: '/admin/caja', icon: Wallet },
@@ -31,7 +34,8 @@ const NAV_ITEMS = [
 const getPageTitle = (pathname) => {
   if (pathname === '/admin') return 'Resumen Operativo';
   if (pathname.includes('grilla')) return 'Grilla de Turnos';
-  if (pathname.includes('articulos') || pathname.includes('cantina')) return 'Gestor de Artículos';
+  if (pathname.includes('cantina')) return 'Cantina & Pro-Shop';
+  if (pathname.includes('articulos')) return 'Gestor de Artículos';
   if (pathname.includes('turnos-fijos')) return 'Turnos Fijos (Abonos)';
   if (pathname.includes('caja')) return 'Caja Diaria';
   if (pathname.includes('configuracion')) return 'Configuración';
@@ -139,7 +143,7 @@ export default function AdminLayout() {
   const location = useLocation();
   const navigate = useNavigate();
   const { theme } = useTheme();
-  const { nombreClub, colorClub } = useTurnos();
+  const { nombreClub, colorClub, modoLocal, falla, recargar } = useTurnos();
   const { user, logout } = useAuth();
   const currentTheme = themes[theme] || themes.pro;
 
@@ -301,6 +305,25 @@ export default function AdminLayout() {
             {getPageTitle(location.pathname)}
           </p>
         </div>
+
+        {/* Aviso global: la app está operando sin Supabase */}
+        {modoLocal && (
+          <div className="shrink-0 flex items-start sm:items-center gap-2.5 px-4 sm:px-6 lg:px-8 py-2.5 bg-amber-100 border-b border-amber-300 text-amber-900">
+            <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5 sm:mt-0" />
+            <p className="text-[11px] sm:text-xs font-semibold leading-snug flex-1 min-w-0">
+              <span className="font-black">Sin Supabase.</span>{' '}
+              {falla?.mensaje ||
+                'Los datos se guardan sólo en este navegador y no se comparten entre dispositivos.'}
+            </p>
+            <button
+              type="button"
+              onClick={recargar}
+              className="shrink-0 text-[11px] font-black uppercase tracking-wide underline hover:no-underline cursor-pointer"
+            >
+              Reintentar
+            </button>
+          </div>
+        )}
 
         {/* Contenido (Outlet) */}
         <main className="flex-1 overflow-y-auto overscroll-contain-smooth flex flex-col p-4 sm:p-6 lg:p-8 pb-[calc(2rem+env(safe-area-inset-bottom,0px))]">

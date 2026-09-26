@@ -26,12 +26,24 @@ export default function Articulos() {
   // Formulario
   const [formNombre, setFormNombre] = useState('');
   const [formPrecio, setFormPrecio] = useState('');
+  const [formCategoria, setFormCategoria] = useState('');
   const [formCodigoBarras, setFormCodigoBarras] = useState('');
   const [formStock, setFormStock] = useState('');
+
+  /* Categorías: las ya usadas en el inventario, más las sugerencias del POS. */
+  const CATEGORIAS_SUGERIDAS = [
+    'Bebidas',
+    'Pelotas',
+    'Alquileres',
+    'Accesorios',
+    'Snacks',
+    'Otros',
+  ];
 
   const resetForm = () => {
     setFormNombre('');
     setFormPrecio('');
+    setFormCategoria('');
     setFormCodigoBarras('');
     setFormStock('');
     setArticuloEnEdicion(null);
@@ -46,6 +58,7 @@ export default function Articulos() {
     setArticuloEnEdicion(art);
     setFormNombre(art.nombre);
     setFormPrecio(art.precio);
+    setFormCategoria(art.categoria || 'Otros');
     setFormCodigoBarras(art.codigoBarras || '');
     setFormStock(art.stock);
     setModalOpen(true);
@@ -61,6 +74,7 @@ export default function Articulos() {
     const payload = {
       nombre: formNombre.trim(),
       precio: Number(formPrecio) || 0,
+      categoria: formCategoria,
       codigoBarras: formCodigoBarras.trim(),
       stock: Number(formStock) || 0,
     };
@@ -485,6 +499,28 @@ export default function Articulos() {
                     className={inputCls}
                   />
                 </div>
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
+                  Categoría
+                </label>
+                <input
+                  type="text"
+                  list="categorias-articulos"
+                  value={formCategoria}
+                  onChange={(e) => setFormCategoria(e.target.value)}
+                  placeholder="Ej: Bebidas"
+                  className={inputCls}
+                />
+                <datalist id="categorias-articulos">
+                  {CATEGORIAS_SUGERIDAS.map((c) => (
+                    <option key={c} value={c} />
+                  ))}
+                </datalist>
+                <p className="text-[10px] text-slate-400 font-medium mt-1">
+                  Se usa para filtrar por categoría en el POS de cantina.
+                </p>
               </div>
 
               <div>

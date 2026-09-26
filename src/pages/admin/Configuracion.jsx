@@ -8,7 +8,9 @@ import {
   Building2,
   Info,
   Palette,
-  Clock
+  Clock,
+  AlertTriangle,
+  RefreshCw,
 } from 'lucide-react';
 import { useTheme } from '../../context/ThemeContext';
 import { useTurnos } from '../../context/TurnosContext';
@@ -22,6 +24,11 @@ export default function Configuracion() {
     setColorClub,
     precioBaseCancha,
     setPrecioBaseCancha,
+    incluyeManana,
+    setIncluyeManana,
+    modoLocal,
+    falla,
+    recargar,
   } = useTurnos();
 
   // Estado White-Label: Nombre del Club
@@ -57,16 +64,9 @@ export default function Configuracion() {
   const [whatsapp, setWhatsapp] = useState('');
   const [datosGuardados, setDatosGuardados] = useState(false);
 
-  // Estado de horarios
-  const [mananaHabilitada, setMananaHabilitada] = useState(
-    localStorage.getItem('puntoexe-manana') === 'true'
-  );
-
-  const toggleManana = () => {
-    const val = !mananaHabilitada;
-    setMananaHabilitada(val);
-    localStorage.setItem('puntoexe-manana', val);
-  };
+  // Estado de horarios. El valor vive en el contexto, así que el cambio se
+  // refleja al instante en la grilla y en la vista de reservas (antes se leía
+  // de localStorage a nivel de módulo y había que recargar con F5).
 
   const guardarTarifa = () => {
     const n = Number(inputPrecioBase);
@@ -85,17 +85,34 @@ export default function Configuracion() {
     setTimeout(() => setDatosGuardados(false), 3000);
   };
 
-  const inputCls =
-    'w-full bg-white border border-slate-200 rounded-xl px-4 py-3.5 sm:py-3 text-base sm:text-sm text-slate-800 font-medium placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all';
-
   return (
     <div className="max-w-4xl mx-auto w-full flex flex-col gap-5 sm:gap-8 pb-10">
       {/* ─── Cabecera ─── */}
-      <div>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <h1 className="text-xl sm:text-2xl font-black text-zinc-900 tracking-tight">
           Configuración
         </h1>
+        {modoLocal && (
+          <button
+            type="button"
+            onClick={recargar}
+            className="flex items-center gap-2 self-start px-3 py-2 rounded-lg bg-amber-100 text-amber-800 text-xs font-bold hover:bg-amber-200 transition-colors cursor-pointer"
+          >
+            <RefreshCw className="w-3.5 h-3.5" />
+            Reconectar con Supabase
+          </button>
+        )}
       </div>
+
+      {modoLocal && (
+        <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl flex items-start gap-3">
+          <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+          <p className="text-xs text-amber-800 font-medium">
+            {falla?.mensaje ||
+              'Los cambios se guardan sólo en este navegador y no se comparten entre dispositivos.'}
+          </p>
+        </div>
+      )}
 
       {/* ─── Sección 0: Identidad del Club (White-Label) ─── */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
@@ -317,14 +334,18 @@ export default function Configuracion() {
           <label className="flex items-center justify-between gap-4 p-4 rounded-xl border border-slate-200 cursor-pointer hover:bg-slate-50 transition-colors">
             <div className="min-w-0">
               <span className="font-bold text-slate-800 text-sm block">Habilitar Turnos por la Mañana</span>
-              <span className="text-xs text-slate-500 font-medium">Abre la grilla desde las 08:00 hasta las 14:00 hrs.</span>
+              <span className="text-xs text-slate-500 font-medium">
+                {incluyeManana
+                  ? 'La grilla abre a las 08:00 y cierra a las 23:30.'
+                  : 'La grilla abre a las 14:00 y cierra a las 23:30.'}
+              </span>
             </div>
             <div className="relative inline-flex items-center cursor-pointer shrink-0">
               <input
                 type="checkbox"
                 className="sr-only peer"
-                checked={mananaHabilitada}
-                onChange={toggleManana}
+                checked={incluyeManana}
+                onChange={(e) => setIncluyeManana(e.target.checked)}
               />
               <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-punto-brand"></div>
             </div>

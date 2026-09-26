@@ -1,81 +1,39 @@
-import { useState, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
+import { supabase } from '../../lib/supabaseClient';
 import {
   Printer,
   AlertTriangle,
   CalendarDays,
-  Coffee,
+  CoffeeIcon,
   DollarSign,
   TrendingUp,
   CheckCircle2,
   Clock,
   Receipt,
   X,
-  ShieldAlert
+  ShieldAlert,
 } from 'lucide-react';
 import { useTurnos } from '../../context/TurnosContext';
+import { hoyISO, normalizarHora } from '../../utils/dateHelpers';
 
-/* Datos mock de cantina (en un flujo real vendrían de otra tabla de Supabase) */
-const MOVIMIENTOS_CANTINA = [
-  {
-    id: 1,
-    hora: '15:10',
-    ticket: 'TCK-1048',
-    articulos: '2x Gatorade Manzana, 1x Tubo Head Pro',
-    metodo: 'Efectivo',
-    monto: 14800
-  },
-  {
-    id: 2,
-    hora: '16:45',
-    ticket: 'TCK-1049',
-    articulos: '2x Agua Mineral 600ml, 1x Grip Bullpadel',
-    metodo: 'Transferencia / MP',
-    monto: 6200
-  },
-  {
-    id: 3,
-    hora: '18:20',
-    ticket: 'TCK-1050',
-    articulos: '1x Alquiler Paleta Carbono',
-    metodo: 'Tarjeta Débito',
-    monto: 4000
-  },
-  {
-    id: 4,
-    hora: '19:55',
-    ticket: 'TCK-1051',
-    articulos: '2x Cerveza Corona, 1x Barra Proteica',
-    metodo: 'Efectivo',
-    monto: 9100
-  },
-  {
-    id: 5,
-    hora: '21:15',
-    ticket: 'TCK-1052',
-    articulos: '1x Café Espresso',
-    metodo: 'Transferencia / MP',
-    monto: 1800
-  },
-  {
-    id: 6,
-    hora: '22:40',
-    ticket: 'TCK-1053',
-    articulos: '1x Gatorade Manzana',
-    metodo: 'Efectivo',
-    monto: 2500
-  }
-];
+const ETIQUETA_METODO = {
+  efectivo: 'Efectivo',
+  transferencia: 'Transferencia / MP',
+  tarjeta: 'Tarjeta Débito',
+};
 
 export default function CajaDiaria() {
   const { obtenerTurnosDelDia, precioBaseCancha } = useTurnos();
 
   const [modalCierreZ, setModalCierreZ] = useState(false);
   const [cierreRealizado, setCierreRealizado] = useState(false);
+  const [ventas, setVentas] = useState([]);
+  const [cargandoVentas, setCargandoVentas] = useState(true);
 
-  const fechaISO = new Date().toISOString().split('T')[0];
+  const fechaISO = hoyISO();
 
-  // Los cobros se originan en la Agenda Diaria, que escribe en el mismo
-  // contexto. Leerlos desde la misma fuente evita que la caja quede vacía.
+  /* Los cobros de canchas se originan en la Agenda Diaria, que escribe en el
+     mismo contexto: leerlos de otra fuente dejaba la lista siempre vacía. */
   const turnosPagados = useMemo(
     () =>
       obtenerTurnosDelDia(fechaISO)
@@ -84,23 +42,50 @@ export default function CajaDiaria() {
     [obtenerTurnosDelDia, fechaISO]
   );
 
-  const formatearMonto = (num) => {
-    return new Intl.NumberFormat('es-AR', {
+  /* Ventas de cantina: reales. Antes eran 6 tickets inventados hardcodeados
+     que sumaban $38.400 a la recaudación total. */
+  const cargarVentas = useCallback(async () => {
+    setCargandoVentas(true);
+    try {
+      const { data, error } = await supabase
+        .from('ventas_cantina')
+        .select('*, ventas_cantina_detalle(nombre, precio, cantidad)')
+        .eq('fecha', fechaISO)
+        .order('hora', { ascending: true });
+
+      if (error) {
+        // La tabla puede no existir todavía (falta correr schema.sql).
+        console.warn('[Caja] No se pudieron leer las ventas de cantina:', error.message);
+        setVentas([]);
+      } else {
+        setVentas(data || []);
+      }
+    } catch (err) {
+      console.error('[Caja] Error al cargar ventas de cantina:', err);
+    } finally {
+      setCargandoVentas(false);
+    }
+  }, [fechaISO]);
+
+  useEffect(() => {
+    cargarVentas();
+  }, [cargarVentas]);
+
+  const formatearMonto = (num) =>
+    new Intl.NumberFormat('es-AR', {
       style: 'currency',
       currency: 'ARS',
-      maximumFractionDigits: 0
-    }).format(num);
-  };
+      maximumFractionDigits: 0,
+    }).format(num || 0);
 
-  // Cálculos derivados. `precio` lo guarda el ModalCobro al confirmar; si
-  // no estuviera, se usa la tarifa vigente como referencia.
   const totalCanchas = turnosPagados.reduce(
     (sum, t) => sum + (Number(t.precio) || precioBaseCancha || 0),
     0
   );
-  const totalCantina = MOVIMIENTOS_CANTINA.reduce((sum, m) => sum + m.monto, 0);
+  const totalCantina = ventas.reduce((sum, v) => sum + (Number(v.total) || 0), 0);
   const totalGeneral = totalCanchas + totalCantina;
   const cantidadTurnosPagados = turnosPagados.length;
+  const unidadesCantina = ventas.reduce((sum, v) => sum + (Number(v.cantidad_items) || 0), 0);
 
   const handleImprimir = () => {
     window.print();
@@ -198,7 +183,7 @@ export default function CajaDiaria() {
               {formatearMonto(totalCanchas)}
             </span>
             <p className="text-xs text-slate-500 mt-2 font-medium">
-              {cantidadTurnosPagados} turno{cantidadTurnosPagados !== 1 ? 's' : ''} cobrado{cantidadTurnosPagados !== 1 ? 's' : ''} (estado: "pagado")
+              {cantidadTurnosPagados} turno{cantidadTurnosPagados !== 1 ? 's' : ''} cobrado{cantidadTurnosPagados !== 1 ? 's' : ''} (estado: &quot;pagado&quot;)
             </p>
           </div>
         </div>
@@ -210,7 +195,7 @@ export default function CajaDiaria() {
               INGRESOS CANTINA
             </span>
             <div className="w-8 h-8 rounded-lg bg-emerald-50 flex items-center justify-center text-emerald-600 shrink-0">
-              <Coffee className="w-4 h-4" />
+              <CoffeeIcon className="w-4 h-4" />
             </div>
           </div>
           <div className="mt-4">
@@ -218,7 +203,9 @@ export default function CajaDiaria() {
               {formatearMonto(totalCantina)}
             </span>
             <p className="text-xs text-slate-500 mt-2 font-medium">
-              {MOVIMIENTOS_CANTINA.length} tickets emitidos en mostrador
+              {ventas.length === 0
+                ? 'Sin ventas en mostrador hoy'
+                : `${ventas.length} ticket${ventas.length !== 1 ? 's' : ''} · ${unidadesCantina} unidades`}
             </p>
           </div>
         </div>
@@ -253,7 +240,7 @@ export default function CajaDiaria() {
                 <CalendarDays className="w-10 h-10 text-slate-300 stroke-1 mb-2" />
                 <p className="font-bold text-slate-700 text-sm">Sin turnos cobrados hoy</p>
                 <p className="text-xs text-slate-400 mt-1">
-                  Los turnos aparecen aquí cuando se marcan como "Pagado" en la Agenda Diaria.
+                  Los turnos aparecen acá cuando se marcan como &quot;Pagado&quot; en la Agenda Diaria.
                 </p>
               </div>
             ) : (
@@ -314,46 +301,67 @@ export default function CajaDiaria() {
               </h2>
             </div>
             <span className="text-xs font-bold text-slate-400 bg-slate-100 px-2.5 py-1 rounded-md shrink-0">
-              {MOVIMIENTOS_CANTINA.length} tickets
+              {ventas.length} ticket{ventas.length !== 1 ? 's' : ''}
             </span>
           </div>
 
           <div className="divide-y divide-zinc-100 flex-1 overflow-y-auto overscroll-contain-smooth max-h-[460px]">
-            {MOVIMIENTOS_CANTINA.map((item) => (
-              <div
-                key={item.id}
-                className="py-3.5 flex items-center justify-between gap-4 hover:bg-slate-50/70 px-2 rounded-lg transition-colors"
-              >
-                <div className="flex items-center gap-3 min-w-0">
-                  <div className="w-10 h-10 rounded-lg bg-slate-100 flex items-center justify-center text-xs font-black text-slate-700 shrink-0">
-                    <Clock className="w-3.5 h-3.5 mr-0.5 text-slate-500" />
-                    {item.hora}
-                  </div>
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                      <p className="font-bold text-slate-900 text-sm font-mono">
-                        {item.ticket}
-                      </p>
-                      <span className="text-[10px] font-semibold text-slate-400 bg-zinc-100 px-1.5 py-0.5 rounded">
-                        {item.metodo}
+            {cargandoVentas ? (
+              <div className="flex flex-col items-center justify-center py-12 gap-2">
+                <div className="w-6 h-6 border-[3px] border-slate-200 border-t-slate-900 rounded-full animate-spin" />
+                <p className="text-xs text-slate-400 font-medium">Cargando…</p>
+              </div>
+            ) : ventas.length === 0 ? (
+              <div className="py-12 flex flex-col items-center justify-center text-center px-6">
+                <CoffeeIcon className="w-10 h-10 text-slate-300 stroke-1 mb-2" />
+                <p className="font-bold text-slate-700 text-sm">Sin ventas de cantina</p>
+                <p className="text-xs text-slate-400 mt-1 max-w-xs">
+                  Las ventas cobradas en el mostrador (POS) aparecen acá.
+                </p>
+              </div>
+            ) : (
+              ventas.map((item) => {
+                const detalle = (item.ventas_cantina_detalle || [])
+                  .map((d) => `${d.cantidad}x ${d.nombre}`)
+                  .join(', ');
+
+                return (
+                  <div
+                    key={item.id}
+                    className="py-3.5 flex items-center justify-between gap-3 sm:gap-4 hover:bg-slate-50/70 px-2 rounded-lg transition-colors"
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="w-10 h-10 rounded-lg bg-slate-100 flex items-center justify-center text-xs font-black text-slate-700 shrink-0">
+                        <Clock className="w-3.5 h-3.5 mr-0.5 text-slate-500" />
+                        {normalizarHora(item.hora)}
+                      </div>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <p className="font-bold text-slate-900 text-sm font-mono truncate">
+                            {item.ticket || `#${item.id.slice(0, 6)}`}
+                          </p>
+                          <span className="text-[10px] font-semibold text-slate-400 bg-zinc-100 px-1.5 py-0.5 rounded shrink-0">
+                            {ETIQUETA_METODO[item.metodo_pago] || item.metodo_pago}
+                          </span>
+                        </div>
+                        <p className="text-xs text-slate-500 mt-0.5 truncate">
+                          {detalle || `${item.cantidad_items} artículos`}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="text-right shrink-0">
+                      <span className="font-black text-sm text-slate-900 block tabular-nums">
+                        {formatearMonto(item.total)}
+                      </span>
+                      <span className="text-[11px] font-bold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded">
+                        Cobrado
                       </span>
                     </div>
-                    <p className="text-xs text-slate-500 mt-0.5 truncate">
-                      {item.articulos}
-                    </p>
                   </div>
-                </div>
-
-                <div className="text-right shrink-0">
-                  <span className="font-black text-sm text-slate-900 block">
-                    {formatearMonto(item.monto)}
-                  </span>
-                  <span className="text-[11px] font-bold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded">
-                    Pagado
-                  </span>
-                </div>
-              </div>
-            ))}
+                );
+              })
+            )}
           </div>
         </div>
       </div>
@@ -397,7 +405,7 @@ export default function CajaDiaria() {
                 <span className="font-bold text-slate-900">{formatearMonto(totalCanchas)}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-slate-500">Ventas de Cantina ({MOVIMIENTOS_CANTINA.length}):</span>
+                <span className="text-slate-500">Ventas de Cantina ({ventas.length}):</span>
                 <span className="font-bold text-slate-900">{formatearMonto(totalCantina)}</span>
               </div>
               <div className="pt-2 border-t border-slate-200 flex justify-between text-base font-black">

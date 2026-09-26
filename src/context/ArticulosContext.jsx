@@ -13,12 +13,15 @@ export function ArticulosProvider({ children }) {
       const { data, error } = await supabase.from('articulos').select('*').order('nombre');
       if (error) throw error;
       
-      const mapeados = (data || []).map(art => ({
+      const mapeados = (data || []).map((art) => ({
         id: art.id,
         nombre: art.nombre,
         precio: art.precio,
+        // La columna `categoria` es opcional: si no existe, se agrupa en "Otros"
+        // para que los filtros del POS sigan funcionando.
+        categoria: art.categoria || 'Otros',
         codigoBarras: art.codigo_barras,
-        stock: art.stock
+        stock: art.stock,
       }));
       setArticulos(mapeados);
     } catch (error) {
@@ -37,6 +40,7 @@ export function ArticulosProvider({ children }) {
       const articulo = {
         nombre: nuevoArticulo.nombre.trim(),
         precio: Number(nuevoArticulo.precio) || 0,
+        categoria: (nuevoArticulo.categoria || 'Otros').trim() || 'Otros',
         codigo_barras: (nuevoArticulo.codigoBarras || '').trim(),
         stock: Number(nuevoArticulo.stock) || 0
       };
@@ -50,6 +54,7 @@ export function ArticulosProvider({ children }) {
           id: artDb.id,
           nombre: artDb.nombre,
           precio: artDb.precio,
+          categoria: artDb.categoria || 'Otros',
           codigoBarras: artDb.codigo_barras,
           stock: artDb.stock
         };
@@ -67,6 +72,7 @@ export function ArticulosProvider({ children }) {
       const payload = {};
       if (cambios.nombre !== undefined) payload.nombre = cambios.nombre.trim();
       if (cambios.precio !== undefined) payload.precio = Number(cambios.precio);
+      if (cambios.categoria !== undefined) payload.categoria = (cambios.categoria || 'Otros').trim();
       if (cambios.codigoBarras !== undefined) payload.codigo_barras = cambios.codigoBarras.trim();
       if (cambios.stock !== undefined) payload.stock = Number(cambios.stock);
 
@@ -79,6 +85,7 @@ export function ArticulosProvider({ children }) {
           id: artDb.id,
           nombre: artDb.nombre,
           precio: artDb.precio,
+          categoria: artDb.categoria || 'Otros',
           codigoBarras: artDb.codigo_barras,
           stock: artDb.stock
         };
@@ -104,25 +111,26 @@ export function ArticulosProvider({ children }) {
     }
   };
 
-  const descontarStock = async (id, cantidad = 1) => {
-    try {
-      const art = articulos.find(a => a.id === id);
-      if (!art) return;
-      
-      const nuevoStock = Math.max(0, (art.stock || 0) - cantidad);
-      
-      const { error } = await supabase.from('articulos').update({ stock: nuevoStock }).eq('id', id);
-      if (error) throw error;
-      
-      setArticulos((prev) =>
-        prev.map((a) =>
-          a.id === id ? { ...a, stock: nuevoStock } : a
-        )
-      );
-    } catch (error) {
-      console.error('Error al descontar stock:', error);
-      throw error;
+  /**
+   * Ajusta el stock en cualquier dirección (delta positivo suma, negativo resta).
+   * El stock sólo se toca al confirmar la venta, nunca al armar el carrito: así
+   * abandonar un cobro a medio hacer no descuenta inventario.
+   */
+  const ajustarStock = async (id, delta) => {
+    const art = articulos.find((a) => a.id === id);
+    if (!art) return false;
+
+    const nuevoStock = Math.max(0, (Number(art.stock) || 0) + delta);
+    if (nuevoStock === (Number(art.stock) || 0)) return false;
+
+    const { error } = await supabase.from('articulos').update({ stock: nuevoStock }).eq('id', id);
+    if (error) {
+      console.error('Error al ajustar stock:', error);
+      return false;
     }
+
+    setArticulos((prev) => prev.map((a) => (a.id === id ? { ...a, stock: nuevoStock } : a)));
+    return true;
   };
 
   return (
@@ -134,7 +142,8 @@ export function ArticulosProvider({ children }) {
         crearArticulo,
         actualizarArticulo,
         eliminarArticulo,
-        descontarStock,
+        ajustarStock,
+        stockDe: (id) => Number(articulos.find((a) => a.id === id)?.stock) || 0,
         loading
       }}
     >
