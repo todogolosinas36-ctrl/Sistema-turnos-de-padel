@@ -1,0 +1,36 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer utilities {
+  /* Hide scrollbar but keep functionality */
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  /* ─── Safe areas (notches / barra de gestos en iOS) ─── */
+  .pb-safe {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  .pt-safe {
+    padding-top: env(safe-area-inset-top, 0px);
+  }
+  .h-safe-full {
+    height: 100vh;
+    height: 100dvh;
+  }
+  .max-h-safe-screen {
+    max-height: 100vh;
+    max-height: 100dvh;
+  }
+
+  /* Evita el "pull to refresh" del navegador al scrollear la grilla en mobile */
+  .overscroll-contain-smooth {
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+}
