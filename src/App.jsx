@@ -8,6 +8,7 @@ import RequireAuth from './components/RequireAuth';
 import ClientLayout from './layouts/ClientLayout';
 import Home from './pages/client/Home';
 import CancelacionView from './components/CancelacionView';
+import { NotificationProvider } from './context/NotificationContext';
 
 /* El panel de administración se carga sólo cuando alguien entra a /admin.
    Quien reserva desde el celu no descarga el código del POS, la grilla ni la
@@ -64,7 +65,9 @@ export default function App() {
                     path="/admin"
                     element={
                       <RequireAuth>
-                        <AdminLayout />
+                        <NotificationProvider>
+                          <AdminLayout />
+                        </NotificationProvider>
                       </RequireAuth>
                     }
                   >

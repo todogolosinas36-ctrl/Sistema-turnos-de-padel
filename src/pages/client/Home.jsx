@@ -49,12 +49,26 @@ const calcularHoraFin = (horaInicio, duracionMinutos) => {
 /** Dos horarios se pisan si el inicio de uno cae dentro del otro. */
 const seSolapan = (iniA, finA, iniB, finB) => iniA < finB && finA > iniB;
 
+/**
+ * Dado un string "HH:mm" y una fecha ISO "YYYY-MM-DD",
+ * devuelve el timestamp en ms de ese momento exacto.
+ */
+const horaStrAMs = (fechaISO, horaStr) => {
+  const [h, m] = horaStr.split(':').map(Number);
+  const d = new Date(`${fechaISO}T00:00:00`);
+  d.setHours(h, m, 0, 0);
+  return d.getTime();
+};
+
 export default function Home() {
   const [fecha, setFecha] = useState(hoyISO);
   const [duracion, setDuracion] = useState(90);
   const [reservaActiva, setReservaActiva] = useState(null);
 
   const { canchasActivas, obtenerTurnosDelDia, incluyeManana, loading } = useTurnos();
+
+  // true si el día seleccionado es el día actual
+  const esHoy = fecha === hoyISO();
 
   const turnosDelDia = useMemo(
     () => obtenerTurnosDelDia(fecha),
@@ -84,27 +98,34 @@ export default function Home() {
     [turnosDelDia]
   );
 
-  /* Escaneo en intervalos de 30 minutos evaluando solapamientos. */
-  const canchasConDisponibilidad = useMemo(
-    () =>
-      canchasActivas.map((cancha) => {
-        const bloquesLibres = [];
-        for (let h = horaInicioNum; h <= horaFinNum; h += 0.5) {
-          const horas = Math.floor(h);
-          const minutos = Math.round((h - horas) * 60);
-          const horaStr = `${String(horas).padStart(2, '0')}:${String(minutos).padStart(2, '0')}`;
+  /* Escaneo en intervalos de 30 minutos evaluando solapamientos.
+     Cada elemento del array incluye: { hora: "HH:mm", vencido: bool }  */
+  const canchasConDisponibilidad = useMemo(() => {
+    const ahora = Date.now();
+    return canchasActivas.map((cancha) => {
+      const bloquesLibres = [];
+      for (let h = horaInicioNum; h <= horaFinNum; h += 0.5) {
+        const horas = Math.floor(h);
+        const minutos = Math.round((h - horas) * 60);
+        const horaStr = `${String(horas).padStart(2, '0')}:${String(minutos).padStart(2, '0')}`;
 
-          const inicio = horas * 60 + minutos;
-          const fin = inicio + duracionSeleccionada;
-          if (fin > 1440) continue; // no se pasa de la medianoche
-          if (!estaOcupado(cancha, inicio, fin)) bloquesLibres.push(horaStr);
+        const inicio = horas * 60 + minutos;
+        const fin = inicio + duracionSeleccionada;
+        if (fin > 1440) continue; // no se pasa de la medianoche
+        if (!estaOcupado(cancha, inicio, fin)) {
+          // Si es hoy, verificar si la hora ya pasó
+          const vencido = esHoy && horaStrAMs(fecha, horaStr) < ahora;
+          bloquesLibres.push({ hora: horaStr, vencido });
         }
-        return { ...cancha, bloquesLibres };
-      }),
-    [canchasActivas, estaOcupado, horaInicioNum, horaFinNum, duracionSeleccionada]
-  );
+      }
+      return { ...cancha, bloquesLibres };
+    });
+  }, [canchasActivas, estaOcupado, horaInicioNum, horaFinNum, duracionSeleccionada, esHoy, fecha]);
 
-  const hayDisponibilidad = canchasConDisponibilidad.some((c) => c.bloquesLibres.length > 0);
+  // Hay disponibilidad si al menos un bloque NO está vencido
+  const hayDisponibilidad = canchasConDisponibilidad.some((c) =>
+    c.bloquesLibres.some((b) => !b.vencido)
+  );
 
   return (
     <div className="flex flex-col w-full pb-20">
@@ -225,18 +246,33 @@ export default function Home() {
                   </div>
 
                   <div className="grid grid-cols-3 sm:grid-cols-4 gap-3">
-                    {cancha.bloquesLibres.map((bloque) => {
+                    {cancha.bloquesLibres.map(({ hora: bloque, vencido }) => {
                       const horaFin = calcularHoraFin(bloque, duracion);
                       return (
                         <button
                           key={bloque}
-                          onClick={() =>
-                            setReservaActiva({ cancha, fecha, horaInicio: bloque, duracion })
+                          disabled={vencido}
+                          onClick={
+                            vencido
+                              ? undefined
+                              : () => setReservaActiva({ cancha, fecha, horaInicio: bloque, duracion })
                           }
-                          className="py-2 px-1 rounded-xl border border-zinc-200 bg-white hover:border-punto-brand hover:shadow-xs focus:outline-none focus:ring-2 focus:ring-punto-brand transition-all shadow-xs active:scale-95 cursor-pointer group"
+                          className={
+                            vencido
+                              ? 'py-2 px-1 rounded-xl border border-slate-200 bg-slate-50 opacity-50 cursor-not-allowed pointer-events-none select-none'
+                              : 'py-2 px-1 rounded-xl border border-zinc-200 bg-white hover:border-punto-brand hover:shadow-xs focus:outline-none focus:ring-2 focus:ring-punto-brand transition-all shadow-xs active:scale-95 cursor-pointer group'
+                          }
+                          aria-disabled={vencido}
+                          title={vencido ? 'Este horario ya pasó' : undefined}
                         >
                           <div className="flex flex-col items-center justify-center">
-                            <span className="text-sm font-black text-zinc-800 group-hover:text-punto-brand transition-colors">
+                            <span
+                              className={
+                                vencido
+                                  ? 'text-sm font-black text-slate-400'
+                                  : 'text-sm font-black text-zinc-800 group-hover:text-punto-brand transition-colors'
+                              }
+                            >
                               {bloque}
                             </span>
                             <span className="text-[10px] font-bold text-zinc-400 tracking-wide mt-0.5">

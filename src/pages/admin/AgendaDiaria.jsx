@@ -1,4 +1,5 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { generarBloquesHorarios, hoyISO, sumarDias } from '../../utils/dateHelpers';
 import { calcularHoraFin } from '../../utils/timeCalculations';
 import { useTurnos } from '../../context/TurnosContext';
@@ -23,28 +24,54 @@ const grillaDe = (cantCanchas) => {
   };
 };
 
-/* ─── Estilos por estado del turno (Estética Premium SaaS) ─── */
+/* ─── Estilos por estado del turno ─── */
 const ESTADO_ESTILOS = {
   pagado: {
-    border: 'border-l-emerald-500',
-    badge: 'bg-emerald-50 text-emerald-700 border border-emerald-200',
+    card:  'bg-emerald-100 border-emerald-300 text-emerald-900',
+    badge: 'bg-emerald-200/70 text-emerald-900 border border-emerald-300',
     label: 'Pagado ✓',
   },
+  pago_parcial: {
+    card:  'bg-orange-100 border-orange-300 text-orange-900',
+    badge: 'bg-orange-200/70 text-orange-900 border border-orange-300',
+    label: 'Pago Parcial',
+  },
   confirmado: {
-    border: 'border-l-blue-500',
-    badge: 'bg-blue-50 text-blue-700 border border-blue-200',
+    card:  'bg-blue-100 border-blue-300 text-blue-900',
+    badge: 'bg-blue-200/70 text-blue-900 border border-blue-300',
     label: 'Confirmado',
   },
   abono: {
-    border: 'border-l-violet-500',
-    badge: 'bg-violet-50 text-violet-700 border border-violet-200',
+    card:  'bg-purple-100 border-purple-300 text-purple-900',
+    badge: 'bg-purple-200/70 text-purple-900 border border-purple-300',
     label: 'Abono Fijo',
   },
   pendiente: {
-    border: 'border-l-amber-500',
-    badge: 'bg-amber-50 text-amber-700 border border-amber-200',
+    card:  'bg-pink-100 border-pink-300 text-pink-900',
+    badge: 'bg-pink-200/70 text-pink-900 border border-pink-300',
     label: 'Pendiente / Seña',
   },
+};
+
+/**
+ * Detecta si un turno tiene pago parcial:
+ * al menos un jugador del detalle_cobro está marcado como pagado
+ * pero no todos lo están (el turno no está en estado 'pagado' final).
+ */
+const detectarPagoParcial = (turno) => {
+  if (!Array.isArray(turno.detalle_cobro) || turno.detalle_cobro.length === 0) return false;
+  if (turno.estado === 'pagado') return false;
+  const pagados = turno.detalle_cobro.filter((j) => j.pagado).length;
+  return pagados > 0 && pagados < turno.detalle_cobro.length;
+};
+
+/** Texto del indicador de jugadores: "2/4 pagaron" */
+const textoJugadoresPagados = (turno) => {
+  if (!Array.isArray(turno.detalle_cobro) || turno.detalle_cobro.length === 0) return null;
+  const total = turno.detalle_cobro.length;
+  const pagados = turno.detalle_cobro.filter((j) => j.pagado).length;
+  if (pagados === 0) return null;
+  return `${pagados}/${total} pagaron`;
 };
 
 /* ─── Modal de carga rápida ─── */
@@ -309,9 +336,9 @@ function BloqueAcciones({ turno, onCobrar, onCancelar, onClose }) {
     </div>
   );
 
-  return (
+  return createPortal(
     <div
-      className="fixed inset-0 z-50 flex items-end sm:items-center sm:justify-center bg-zinc-950/40 sm:bg-zinc-950/30 backdrop-blur-[2px] animate-in fade-in duration-150 p-0 sm:p-4"
+      className="fixed inset-0 z-[100] flex items-end sm:items-center sm:justify-center bg-zinc-950/50 backdrop-blur-[2px] animate-in fade-in duration-150 p-0 sm:p-4"
       onClick={(e) => { e.stopPropagation(); onClose(); }}
     >
       {/* ─── Mobile: bottom sheet ─── */}
@@ -335,7 +362,8 @@ function BloqueAcciones({ turno, onCobrar, onCancelar, onClose }) {
         {cabeceraContexto}
         {listaBotones}
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 
@@ -353,12 +381,49 @@ const calcularHoraFinReal = (horaInicio, duracionMinutos) => {
   return `${horasStr}:${minutosStr}`;
 };
 
+/* ─── Helper: convierte "HH:MM" a milisegundos desde epoch (fecha base) ─── */
+const horarioAMs = (fechaISO, horaStr) => {
+  if (!fechaISO || !horaStr) return 0;
+  const [h, m] = horaStr.substring(0, 5).split(':').map(Number);
+  const d = new Date(`${fechaISO}T00:00:00`);
+  d.setHours(h, m, 0, 0);
+  return d.getTime();
+};
+
 function BloqueOcupado({ turno, colorHex, onAbrirCobro }) {
   const { cambiarEstado } = useTurnos();
   const [showMenu, setShowMenu] = useState(false);
+  const [currentTime, setCurrentTime] = useState(Date.now());
+  const intervalRef = useRef(null);
   const estado = turno.estado;
 
   const estilos = ESTADO_ESTILOS[estado] || ESTADO_ESTILOS.confirmado;
+
+  /* ── Calcular progreso en vivo ── */
+  const fechaTurno = turno.fecha; // "YYYY-MM-DD"
+  const horaInicioStr = turno.hora_inicio?.substring(0, 5);
+  const durMin = turno.duracion_minutos || 90;
+  const horaFinStr = calcularHoraFinReal(horaInicioStr, durMin);
+
+  const startMs = horarioAMs(fechaTurno, horaInicioStr);
+  const endMs   = horarioAMs(fechaTurno, horaFinStr);
+  const totalMs = endMs - startMs;
+
+  const progreso = totalMs > 0
+    ? Math.min(100, Math.max(0, ((currentTime - startMs) / totalMs) * 100))
+    : 0;
+
+  const tiempoCompleto = currentTime >= endMs && endMs > 0;
+  const enCurso = currentTime >= startMs && currentTime < endMs && endMs > 0;
+
+  /* ── Intervalo: actualizar cada 60 seg mientras el turno esté en curso ── */
+  useEffect(() => {
+    if (!enCurso && !tiempoCompleto) return;
+    intervalRef.current = setInterval(() => {
+      setCurrentTime(Date.now());
+    }, 60_000);
+    return () => clearInterval(intervalRef.current);
+  }, [enCurso, tiempoCompleto]);
 
   const handleCobrar = async () => {
     setShowMenu(false);
@@ -369,18 +434,22 @@ function BloqueOcupado({ turno, colorHex, onAbrirCobro }) {
     await cambiarEstado(turno.id, 'cancelado');
   };
 
-  const span = (turno.duracion_minutos || 90) / 30;
+  const span = durMin / 30;
   const heightPercent = span * 100;
 
   const esAbono = Boolean(turno.es_fijo);
   const esPagado = turno.estado === 'pagado';
   const esPendiente = turno.estado === 'pendiente' || turno.estado === 'seña' || turno.estado === 'con_seña';
+  const esPagoParcial = detectarPagoParcial(turno);
+  const textoSplit = textoJugadoresPagados(turno);
 
   let configEstado = ESTADO_ESTILOS.confirmado;
   if (esAbono) {
     configEstado = ESTADO_ESTILOS.abono;
   } else if (esPagado) {
     configEstado = ESTADO_ESTILOS.pagado;
+  } else if (esPagoParcial) {
+    configEstado = ESTADO_ESTILOS.pago_parcial;
   } else if (esPendiente) {
     configEstado = ESTADO_ESTILOS.pendiente;
   }
@@ -388,7 +457,7 @@ function BloqueOcupado({ turno, colorHex, onAbrirCobro }) {
   return (
     <>
       <div
-        className={`absolute left-0 right-0 top-0 m-0.5 sm:m-1 bg-white border border-slate-200 rounded-xl p-1 sm:p-2 flex flex-col items-center justify-center text-center border-l-4 shadow-sm hover:shadow-md transition-all duration-200 cursor-pointer overflow-hidden z-10 select-none animate-fade-in ${configEstado.border}`}
+        className={`absolute left-0 right-0 top-0 m-0.5 sm:m-1 border rounded-xl p-1 sm:p-2 flex flex-col items-center justify-center text-center shadow-sm hover:shadow-md transition-all duration-200 cursor-pointer overflow-hidden select-none animate-fade-in ${configEstado.card} ${showMenu ? 'z-[60] shadow-lg scale-[1.02]' : 'z-10'}`}
         style={{ height: `calc(${heightPercent}% - 6px)` }}
         onClick={() => {
           if (turno.estado !== 'pagado') {
@@ -398,39 +467,86 @@ function BloqueOcupado({ turno, colorHex, onAbrirCobro }) {
           }
         }}
       >
+        {/* ── Anillo de progreso circular (top-right) ── */}
+        {enCurso && (
+          <div className="absolute top-1.5 right-1.5 sm:top-2 sm:right-2 w-6 h-6 sm:w-7 sm:h-7 flex items-center justify-center z-20 pointer-events-none">
+            <svg
+              viewBox="0 0 28 28"
+              className="-rotate-90 w-full h-full"
+              aria-hidden="true"
+            >
+              {/* Pista de fondo */}
+              <circle
+                cx="14" cy="14" r="10"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.5"
+                className="opacity-20"
+              />
+              {/* Arco de progreso */}
+              <circle
+                cx="14" cy="14" r="10"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.5"
+                strokeLinecap="round"
+                className="opacity-70 transition-all duration-[60000ms] ease-linear"
+                strokeDasharray={62.83}
+                strokeDashoffset={62.83 * (1 - progreso / 100)}
+              />
+            </svg>
+          </div>
+        )}
+
+        {/* ── Badge "Tiempo Completo" (reemplaza al anillo cuando llega a 100%) ── */}
+        {tiempoCompleto && (
+          <div className="absolute top-1 right-1 z-20 pointer-events-none">
+            <span className="inline-flex items-center gap-0.5 bg-red-50 text-red-600 border border-red-200 text-[9px] font-bold px-1.5 py-0.5 rounded-md shadow-sm animate-pulse leading-none">
+              ⏱️ Tiempo Completo
+            </span>
+          </div>
+        )}
+
         {/* Nombre del jugador */}
-        <p className="font-bold text-slate-800 text-xs sm:text-sm truncate w-full leading-tight capitalize">
+        <p className="relative z-10 font-bold text-current text-xs sm:text-sm truncate w-full leading-tight capitalize">
           {turno.cliente_nombre} {turno.cliente_apellido}
         </p>
 
         {/* Horario */}
-        <div className="text-[10px] sm:text-[11px] text-slate-500 font-medium mt-0.5 tabular-nums leading-none">
-          {turno.hora_inicio?.substring(0, 5)} -{' '}
-          {calcularHoraFinReal(turno.hora_inicio?.substring(0, 5), turno.duracion_minutos || 90)}
+        <div className="relative z-10 text-[10px] sm:text-[11px] font-medium mt-0.5 tabular-nums leading-none opacity-75">
+          {horaInicioStr} -{' '}
+          {horaFinStr}
         </div>
 
-        {/* Cancha (redundante en mobile: la columna ya la identifica) */}
+        {/* Cancha (redundante en mobile) */}
         {span >= 3 && (
-          <div className="hidden sm:block text-[10px] text-slate-400 uppercase font-medium mt-0.5 truncate w-full leading-none">
+          <div className="relative z-10 hidden sm:block text-[10px] uppercase font-medium mt-0.5 truncate w-full leading-none opacity-60">
             {turno.cancha_nombre || turno.cancha}
           </div>
         )}
 
         {/* Estado / Badge diferenciador */}
         <span
-          className={`mt-0.5 sm:mt-1 text-[9px] sm:text-[10px] font-semibold px-2 py-0.5 rounded-full w-fit leading-none shadow-2xs ${configEstado.badge}`}
+          className={`relative z-10 mt-0.5 sm:mt-1 text-[9px] sm:text-[10px] font-bold px-2 py-0.5 rounded-full w-fit leading-none ${configEstado.badge}`}
         >
           {configEstado.label}
         </span>
 
-        {/* Botón de menú */}
+        {/* Indicador de jugadores pagados (solo en pago parcial) */}
+        {esPagoParcial && textoSplit && (
+          <span className="relative z-10 text-[9px] font-medium leading-none mt-0.5 opacity-75">
+            {textoSplit}
+          </span>
+        )}
+
+        {/* Botón de menú (top-left para no colisionar con el anillo) */}
         <button
           type="button"
           onClick={(e) => { e.stopPropagation(); setShowMenu(true); }}
           aria-label="Acciones del turno"
-          className="absolute top-1 right-1 sm:top-2 sm:right-2 w-7 sm:w-6 h-7 sm:h-6 rounded-lg flex items-center justify-center opacity-70 sm:opacity-40 hover:opacity-100 transition-opacity bg-white hover:bg-slate-100 active:scale-90 shadow-2xs"
+          className="absolute top-1 left-1 sm:top-2 sm:left-2 w-6 h-6 rounded-lg flex items-center justify-center opacity-40 hover:opacity-100 transition-opacity bg-white/40 hover:bg-white/70 active:scale-90 z-20"
         >
-          <MoreVertical className="w-3.5 h-3.5 text-slate-500" />
+          <MoreVertical className="w-3 h-3 text-current" />
         </button>
       </div>
 
@@ -445,6 +561,17 @@ function BloqueOcupado({ turno, colorHex, onAbrirCobro }) {
     </>
   );
 }
+
+/* ─── Helper: indica si un bloque de 30 min ya caducó (solo aplica al día de hoy) ─── */
+const esBloqueVencido = (fechaISO, horaInicioBloque) => {
+  const ahora = new Date();
+  const hoy = ahora.toISOString().slice(0, 10);
+  if (fechaISO !== hoy) return false; // solo bloquear en el día de hoy
+  const [h, m] = horaInicioBloque.split(':').map(Number);
+  const bloqueDate = new Date();
+  bloqueDate.setHours(h, m, 0, 0);
+  return bloqueDate < ahora;
+};
 
 /* ─── AgendaDiaria (Matriz) ─── */
 export default function AgendaDiaria({ fecha: fechaProp }) {
@@ -654,21 +781,29 @@ export default function AgendaDiaria({ fecha: fechaProp }) {
                         (t) => t.hora_inicio?.substring(0, 5) === bloque
                       );
 
+                      /* ── ¿El bloque vacío ya caducó? (solo hoy) ── */
+                      const vencido = !turno && esBloqueVencido(fecha, bloque);
+
                       return (
                         <div
                           key={cancha.id}
                           className={`flex-1 min-w-[140px] relative min-h-[36px] sm:min-h-[40px] ${
-                            !turno
+                            !turno && !vencido
                               ? 'group cursor-pointer transition-colors duration-200 hover:bg-slate-50'
+                              : ''
+                          } ${
+                            vencido
+                              ? 'bg-slate-50/50 opacity-60 border-dashed border-slate-200 cursor-not-allowed pointer-events-none'
                               : ''
                           } ${
                             i < canchas.length - 1 ? 'border-r border-slate-100' : ''
                           } ${turno ? 'z-10' : 'z-0'}`}
                           onClick={() => {
-                            if (!turno) {
+                            if (!turno && !vencido) {
                               setModal({ bloque, cancha, turnos: turnosCancha });
                             }
                           }}
+                          title={vencido ? 'Horario ya pasado' : undefined}
                         >
                           {turno ? (
                             <BloqueOcupado
@@ -676,7 +811,11 @@ export default function AgendaDiaria({ fecha: fechaProp }) {
                               colorHex={cancha.color_identificador}
                               onAbrirCobro={setTurnoParaCobro}
                             />
+                          ) : vencido ? (
+                            /* Celda bloqueada: estilo ultra limpio sin dibujos */
+                            null
                           ) : (
+                            /* Celda libre con hover "+ Reservar" */
                             <div className="absolute inset-0 flex items-center justify-center pointer-events-none select-none">
                               <span className="opacity-0 group-hover:opacity-100 transition-opacity text-slate-400 text-sm font-medium">
                                 + Reservar
@@ -697,23 +836,27 @@ export default function AgendaDiaria({ fecha: fechaProp }) {
       {/* ─── Leyenda ─── */}
       <div className="flex items-center gap-x-4 gap-y-2 px-1 flex-wrap shrink-0">
         <div className="flex items-center gap-1.5">
-          <div className="w-3 h-3 rounded-sm border border-slate-200 border-l-[3px] border-l-emerald-500 bg-white shadow-2xs" />
+          <div className="w-3.5 h-3.5 rounded-sm bg-emerald-100 border border-emerald-300 shadow-2xs" />
           <span className="text-xs font-semibold text-slate-600">Pagado</span>
         </div>
         <div className="flex items-center gap-1.5">
-          <div className="w-3 h-3 rounded-sm border border-slate-200 border-l-[3px] border-l-blue-500 bg-white shadow-2xs" />
+          <div className="w-3.5 h-3.5 rounded-sm bg-orange-100 border border-orange-300 shadow-2xs" />
+          <span className="text-xs font-semibold text-slate-600">Pago Parcial</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <div className="w-3.5 h-3.5 rounded-sm bg-blue-100 border border-blue-300 shadow-2xs" />
           <span className="text-xs font-semibold text-slate-600">Confirmado</span>
         </div>
         <div className="flex items-center gap-1.5">
-          <div className="w-3 h-3 rounded-sm border border-slate-200 border-l-[3px] border-l-violet-500 bg-white shadow-2xs" />
+          <div className="w-3.5 h-3.5 rounded-sm bg-purple-100 border border-purple-300 shadow-2xs" />
           <span className="text-xs font-semibold text-slate-600">Abono (Fijo)</span>
         </div>
         <div className="flex items-center gap-1.5">
-          <div className="w-3 h-3 rounded-sm border border-slate-200 border-l-[3px] border-l-amber-500 bg-white shadow-2xs" />
+          <div className="w-3.5 h-3.5 rounded-sm bg-pink-100 border border-pink-300 shadow-2xs" />
           <span className="text-xs font-semibold text-slate-600">Pendiente / Seña</span>
         </div>
         <div className="flex items-center gap-1.5">
-          <div className="w-3 h-3 rounded-sm bg-slate-100 border border-dashed border-slate-300" />
+          <div className="w-3.5 h-3.5 rounded-sm bg-slate-100 border border-dashed border-slate-300" />
           <span className="text-xs font-semibold text-slate-500">Libre</span>
         </div>
       </div>
@@ -740,10 +883,12 @@ export default function AgendaDiaria({ fecha: fechaProp }) {
         isOpen={!!turnoParaCobro}
         turno={turnoParaCobro}
         onClose={() => setTurnoParaCobro(null)}
-        onConfirmarCobro={async (turnoId, detalleCobro) => {
-          setTurnoParaCobro(null);
+        onConfirmarCobro={async (turnoId, detalleCobro, estadoExplicito) => {
+          const nuevoEstado = estadoExplicito || 'pagado';
+          // Solo cerrar el picker si es pago completo; el parcial se guarda en background
+          if (nuevoEstado === 'pagado') setTurnoParaCobro(null);
           try {
-            await cambiarEstado(turnoId, 'pagado', detalleCobro || {});
+            await cambiarEstado(turnoId, nuevoEstado, detalleCobro || {});
           } catch (err) {
             console.error('[Agenda] No se pudo registrar el cobro:', err);
           }

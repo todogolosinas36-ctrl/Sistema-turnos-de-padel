@@ -14,11 +14,13 @@ import {
   LogOut,
   Coffee,
   AlertTriangle,
+  CheckCheck,
 } from 'lucide-react';
 import LogoPadel from '../components/LogoPadel';
 import { useTheme } from '../context/ThemeContext';
 import { useTurnos } from '../context/TurnosContext';
 import { useAuth } from '../context/AuthContext';
+import { useNotifications } from '../context/NotificationContext';
 import { themes } from '../utils/themeConfig';
 
 const NAV_ITEMS = [
@@ -149,6 +151,9 @@ export default function AdminLayout() {
 
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [cerrandoSesion, setCerrandoSesion] = useState(false);
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+
+  const { notificaciones, limpiarNotificaciones } = useNotifications();
 
   const emailAdmin = user?.email || 'admin@club.com';
   const iniciales = emailAdmin.slice(0, 2).toUpperCase();
@@ -156,6 +161,11 @@ export default function AdminLayout() {
   // Cerrar el drawer al navegar (comportamiento esperado en mobile)
   useEffect(() => {
     setDrawerOpen(false);
+  }, [location.pathname]);
+
+  // Cerrar el dropdown de notificaciones al navegar
+  useEffect(() => {
+    setDropdownOpen(false);
   }, [location.pathname]);
 
   // Bloquear scroll del body + cerrar con Escape mientras el drawer está abierto
@@ -259,14 +269,112 @@ export default function AdminLayout() {
 
           <div className="flex items-center gap-2 sm:gap-4 shrink-0">
             {/* Notificaciones */}
-            <button
-              type="button"
-              aria-label="Notificaciones"
-              className="relative p-2.5 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
-            >
-              <Bell className="w-5 h-5" />
-              <span className="absolute top-2 right-2 w-2 h-2 bg-punto-brand rounded-full" />
-            </button>
+            <div className="relative">
+              <button
+                type="button"
+                id="btn-notificaciones"
+                aria-label="Notificaciones"
+                aria-expanded={dropdownOpen}
+                aria-haspopup="true"
+                onClick={() => setDropdownOpen((v) => !v)}
+                className="relative p-2.5 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
+              >
+                <Bell className="w-5 h-5" />
+                {/* Badge pulsante cuando hay notificaciones sin leer */}
+                {notificaciones.length > 0 && (
+                  <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-red-500 rounded-full animate-pulse border-2 border-white" />
+                )}
+              </button>
+
+              {/* Dropdown de notificaciones */}
+              {dropdownOpen && (
+                <>
+                  {/* Overlay invisible para cerrar al clickear fuera */}
+                  <div
+                    className="fixed inset-0 z-40"
+                    aria-hidden="true"
+                    onClick={() => setDropdownOpen(false)}
+                  />
+                  <div
+                    role="menu"
+                    aria-label="Lista de notificaciones"
+                    className="absolute right-0 mt-2 w-80 bg-white rounded-2xl shadow-xl border border-slate-100 z-50 overflow-hidden animate-fade-in"
+                  >
+                    {/* Cabecera del dropdown */}
+                    <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 bg-slate-50">
+                      <div className="flex items-center gap-2">
+                        <Bell className="w-4 h-4 text-slate-500" />
+                        <span className="text-sm font-bold text-slate-700">Notificaciones</span>
+                        {notificaciones.length > 0 && (
+                          <span className="bg-red-100 text-red-600 text-[10px] font-black px-1.5 py-0.5 rounded-full leading-none">
+                            {notificaciones.length}
+                          </span>
+                        )}
+                      </div>
+                      {notificaciones.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => { limpiarNotificaciones(); setDropdownOpen(false); }}
+                          className="text-[11px] font-semibold text-slate-400 hover:text-slate-700 transition-colors flex items-center gap-1"
+                        >
+                          <CheckCheck className="w-3.5 h-3.5" />
+                          Marcar leídas
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Lista */}
+                    <div className="max-h-[340px] overflow-y-auto overscroll-contain">
+                      {notificaciones.length === 0 ? (
+                        <div className="flex flex-col items-center justify-center py-10 gap-2 text-slate-400">
+                          <Bell className="w-8 h-8 opacity-30" />
+                          <p className="text-xs font-medium">Sin notificaciones nuevas</p>
+                        </div>
+                      ) : (
+                        notificaciones.map((notif) => (
+                          <div
+                            key={notif.id}
+                            role="menuitem"
+                            className="flex items-start gap-3 px-4 py-3 border-b border-slate-50 hover:bg-slate-50 transition-colors last:border-0"
+                          >
+                            <div className="shrink-0 w-8 h-8 rounded-xl bg-indigo-50 flex items-center justify-center mt-0.5">
+                              <Bell className="w-3.5 h-3.5 text-indigo-400" />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-semibold text-slate-800 truncate capitalize leading-tight">
+                                {notif.nombre}
+                              </p>
+                              <p className="text-xs text-slate-500 mt-0.5 tabular-nums">
+                                {notif.hora} hs &middot; {notif.cancha}
+                              </p>
+                              {notif.fecha && (
+                                <p className="text-[10px] text-slate-400 mt-0.5">{notif.fecha}</p>
+                              )}
+                            </div>
+                            <span className="shrink-0 text-[10px] text-slate-400 tabular-nums pt-0.5">
+                              {notif.timestamp.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}
+                            </span>
+                          </div>
+                        ))
+                      )}
+                    </div>
+
+                    {/* Footer: Marcar todas */}
+                    {notificaciones.length > 0 && (
+                      <div className="px-4 py-2.5 border-t border-slate-100 bg-slate-50">
+                        <button
+                          type="button"
+                          onClick={() => { limpiarNotificaciones(); setDropdownOpen(false); }}
+                          className="w-full text-xs font-bold text-slate-500 hover:text-slate-800 transition-colors py-1 text-center"
+                        >
+                          Marcar todas como leídas
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
 
             <div className="hidden sm:block h-8 w-px bg-slate-200" />
 

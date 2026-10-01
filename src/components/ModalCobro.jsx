@@ -311,6 +311,31 @@ export default function ModalCobro({ isOpen, onClose, turno, onConfirmarCobro })
     onClose();
   };
 
+  /**
+   * handleCerrar — intercepta todos los cierres del modal principal.
+   * Si hay al menos un jugador que ya pagó pero el cobro no está completo,
+   * persiste el detalle parcial en Supabase con estado 'pago_parcial'
+   * para que la grilla pueda pintarlo de naranja.
+   */
+  const handleCerrar = async () => {
+    const alguienPago = jugadores.some((j) => j.pagado);
+    const todosPagados = jugadores.length > 0 && jugadores.every((j) => j.pagado);
+
+    if (alguienPago && !todosPagados) {
+      // Guardar el estado parcial sin cambiar el estado final del turno
+      const detalleParcial = {
+        ...construirDetalleCobro(jugadores),
+        cobrado_el: undefined, // aún no está liquidado
+      };
+      try {
+        await onConfirmarCobro(turno.id, detalleParcial, turno.estado);
+      } catch (err) {
+        console.error('[ModalCobro] No se pudo guardar el pago parcial:', err);
+      }
+    }
+    onClose();
+  };
+
   // Filtrado en vivo de artículos para el sub-modal de Kiosco
   const articulosFiltrados = useMemo(() => {
     const q = busquedaKiosco.toLowerCase().trim();
@@ -340,7 +365,7 @@ export default function ModalCobro({ isOpen, onClose, turno, onConfirmarCobro })
   return (
     <div
       className="fixed inset-0 z-50 flex items-end sm:items-center sm:justify-center bg-slate-900/60 backdrop-blur-sm sm:p-4 overflow-hidden"
-      onClick={(e) => e.target === e.currentTarget && onClose()}
+      onClick={(e) => e.target === e.currentTarget && handleCerrar()}
     >
       <div className="bg-white rounded-t-3xl sm:rounded-3xl shadow-2xl w-full sm:max-w-4xl h-[92dvh] sm:h-auto sm:max-h-[92vh] flex flex-col overflow-hidden animate-in fade-in slide-in-from-bottom sm:zoom-in-95 duration-200">
         
@@ -379,7 +404,7 @@ export default function ModalCobro({ isOpen, onClose, turno, onConfirmarCobro })
 
             <button
               type="button"
-              onClick={onClose}
+              onClick={handleCerrar}
               aria-label="Cerrar"
               className="w-9 h-9 rounded-xl bg-slate-200/60 hover:bg-slate-200 text-slate-500 flex items-center justify-center transition-colors text-lg cursor-pointer shrink-0"
             >
@@ -708,7 +733,7 @@ export default function ModalCobro({ isOpen, onClose, turno, onConfirmarCobro })
           <div className="flex items-center gap-2 sm:gap-3 shrink-0">
             <button
               type="button"
-              onClick={onClose}
+              onClick={handleCerrar}
               className="flex-1 sm:flex-none px-4 sm:px-5 py-3.5 sm:py-3 rounded-xl border border-slate-200 text-sm font-bold text-slate-600 hover:bg-slate-50 active:scale-[0.98] transition-all cursor-pointer"
             >
               Cerrar
