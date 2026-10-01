@@ -12,7 +12,6 @@ const LS_COLOR_CLUB = '2010-colorClub';
 const LS_PRECIO_BASE = 'puntoexe-precio-base';
 const LS_MANANA = 'puntoexe-manana';
 
-const TARIFA_DEFAULT = 15000;
 const DIAS_SEMANA = [
   'Lunes',
   'Martes',
@@ -111,6 +110,10 @@ const camposTurno = (t) => ({
   motivo_cancelacion: t.motivo_cancelacion || null,
   cancelado_el: t.cancelado_el || null,
   turno_fijo_id: t.turno_fijo_id || null,
+  precio: t.precio !== undefined ? t.precio : null,
+  total_base_cancha: t.total_base_cancha !== undefined ? t.total_base_cancha : null,
+  gastos_compartidos: t.gastos_compartidos || [],
+  detalle_cobro: t.detalle_cobro || null,
 });
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -135,9 +138,11 @@ export function TurnosProvider({ children }) {
   const [colorClub, setColorClubState] = useState(
     () => localStorage.getItem(LS_COLOR_CLUB) || '#09090b'
   );
+  // Fuente de la verdad: iniciamos en null si no hay valor local para que la UI muestre
+  // skeleton/cargando en vez de un valor falso hardcodeado
   const [precioBaseCancha, setPrecioBaseCanchaState] = useState(() => {
     const n = Number(localStorage.getItem(LS_PRECIO_BASE));
-    return Number.isFinite(n) && n > 0 ? n : TARIFA_DEFAULT;
+    return Number.isFinite(n) && n > 0 ? n : null;
   });
   // Antes se leía a nivel de módulo (una sola vez al cargar el bundle), por
   // lo que cambiar el toggle exigía recargar la página con F5.
@@ -164,8 +169,12 @@ export function TurnosProvider({ children }) {
   const setPrecioBaseCancha = useCallback((nuevo) => {
     setPrecioBaseCanchaState((prev) => {
       const bruto = typeof nuevo === 'function' ? nuevo(prev) : Number(nuevo);
-      const valor = Number.isFinite(bruto) && bruto > 0 ? Math.round(bruto) : TARIFA_DEFAULT;
-      localStorage.setItem(LS_PRECIO_BASE, String(valor));
+      const valor = Number.isFinite(bruto) && bruto > 0 ? Math.round(bruto) : null;
+      if (valor !== null) {
+        localStorage.setItem(LS_PRECIO_BASE, String(valor));
+      } else {
+        localStorage.removeItem(LS_PRECIO_BASE);
+      }
       return valor;
     });
   }, []);
@@ -200,7 +209,20 @@ export function TurnosProvider({ children }) {
       setFalla(clasificarErrorSupabase(resTurnos.error));
       setTurnos(leerLS(LS_TURNOS, []).map(normalizarTurno).filter(Boolean));
     } else {
-      setTurnos((resTurnos.data || []).map(normalizarTurno).filter(Boolean));
+      const turnosNormalizados = (resTurnos.data || []).map(normalizarTurno).filter(Boolean);
+      setTurnos(turnosNormalizados);
+
+      // Fuente de la Verdad en Supabase: si existen turnos con total_base_cancha o precio registrado,
+      // consolidar el precio base general con el más reciente guardado en Supabase
+      const turnosConPrecio = (resTurnos.data || [])
+        .filter((t) => Number(t.total_base_cancha) > 0 || Number(t.precio) > 0)
+        .sort((a, b) => new Date(b.creado_el || b.fecha || 0) - new Date(a.creado_el || a.fecha || 0));
+
+      if (turnosConPrecio.length > 0) {
+        const precioSupabase = Number(turnosConPrecio[0].total_base_cancha) || Number(turnosConPrecio[0].precio);
+        setPrecioBaseCanchaState(precioSupabase);
+        localStorage.setItem(LS_PRECIO_BASE, String(precioSupabase));
+      }
     }
 
     if (resFijos.error) {

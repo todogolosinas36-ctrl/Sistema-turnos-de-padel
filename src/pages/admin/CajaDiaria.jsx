@@ -80,7 +80,7 @@ export default function CajaDiaria() {
     }).format(num || 0);
 
   const totalCanchas = turnosPagados.reduce(
-    (sum, t) => sum + (Number(t.precio) || precioBaseCancha || 0),
+    (sum, t) => sum + (Number(t.precio) || Number(t.total_base_cancha) || (precioBaseCancha || 0)),
     0
   );
   const totalCantina = ventas.reduce((sum, v) => sum + (Number(v.total) || 0), 0);
@@ -247,7 +247,7 @@ export default function CajaDiaria() {
             ) : (
               turnosPagados.map((turno) => {
                 const nombreCancha = turno.cancha_nombre || turno.cancha || 'Cancha';
-                const montoCobrado = Number(turno.precio) || precioBaseCancha || 0;
+                const montoCobrado = Number(turno.precio) || Number(turno.total_base_cancha) || (precioBaseCancha || 0);
                 const esRoja = nombreCancha.toLowerCase().includes('roja');
 
                 return (

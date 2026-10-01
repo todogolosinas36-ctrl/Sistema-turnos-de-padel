@@ -4,7 +4,7 @@ import { calcularHoraFin } from '../utils/timeCalculations';
 import { MessageCircle, CheckCircle, X, MapPin, CalendarDays, Clock, AlertTriangle } from 'lucide-react';
 
 export default function ReservaModal({ isOpen, onClose, datosReserva, onSuccess }) {
-  const { agregarTurno } = useTurnos();
+  const { agregarTurno, precioBaseCancha } = useTurnos();
   const [nombre, setNombre] = useState('');
   const [apellido, setApellido] = useState('');
   const [telefono, setTelefono] = useState('');
@@ -51,6 +51,7 @@ export default function ReservaModal({ isOpen, onClose, datosReserva, onSuccess 
         cliente_telefono: telefono.trim(),
         estado: 'confirmado',
         origen: 'cliente',
+        total_base_cancha: precioBaseCancha || null,
       });
 
       if (!data) throw new Error('No se pudo guardar la reserva');

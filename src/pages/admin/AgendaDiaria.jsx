@@ -23,26 +23,32 @@ const grillaDe = (cantCanchas) => {
   };
 };
 
-/* ─── Estilos por estado del turno ─── */
+/* ─── Estilos por estado del turno (Estética Premium SaaS) ─── */
 const ESTADO_ESTILOS = {
+  pagado: {
+    border: 'border-l-emerald-500',
+    badge: 'bg-emerald-50 text-emerald-700 border border-emerald-200',
+    label: 'Pagado ✓',
+  },
   confirmado: {
-    bg: 'bg-sky-50/80',
-    border: 'border-l-sky-500',
-    text: 'text-sky-900',
-    badge: 'bg-sky-100 text-sky-700',
+    border: 'border-l-blue-500',
+    badge: 'bg-blue-50 text-blue-700 border border-blue-200',
     label: 'Confirmado',
   },
-  pagado: {
-    bg: 'bg-emerald-50/80',
-    border: 'border-l-emerald-500',
-    text: 'text-emerald-900',
-    badge: 'bg-emerald-100 text-emerald-700',
-    label: 'Pagado ✓',
+  abono: {
+    border: 'border-l-violet-500',
+    badge: 'bg-violet-50 text-violet-700 border border-violet-200',
+    label: 'Abono Fijo',
+  },
+  pendiente: {
+    border: 'border-l-amber-500',
+    badge: 'bg-amber-50 text-amber-700 border border-amber-200',
+    label: 'Pendiente / Seña',
   },
 };
 
 /* ─── Modal de carga rápida ─── */
-function ModalCargaRapida({ bloque, cancha, fecha, turnos, horaApertura, onClose, onConfirm }) {
+function ModalCargaRapida({ bloque, cancha, fecha, turnos, horaApertura, precioBase, onClose, onConfirm }) {
   const [nombre, setNombre] = useState('');
   const [telefono, setTelefono] = useState('');
   const [duracion, setDuracion] = useState('90');
@@ -99,6 +105,7 @@ function ModalCargaRapida({ bloque, cancha, fecha, turnos, horaApertura, onClose
         cliente_telefono: telefono.trim(),
         estado: 'confirmado',
         origen: 'admin',
+        total_base_cancha: precioBase || null,
       });
     } catch (err) {
       console.error('[Agenda] No se pudo crear el turno:', err);
@@ -367,32 +374,22 @@ function BloqueOcupado({ turno, colorHex, onAbrirCobro }) {
 
   const esAbono = Boolean(turno.es_fijo);
   const esPagado = turno.estado === 'pagado';
+  const esPendiente = turno.estado === 'pendiente' || turno.estado === 'seña' || turno.estado === 'con_seña';
 
-  let tarjetaCls = '';
-  let estiloColor = undefined;
-
+  let configEstado = ESTADO_ESTILOS.confirmado;
   if (esAbono) {
-    tarjetaCls = 'bg-amber-50/90 border-l-amber-500 border border-amber-200/60 text-amber-950';
+    configEstado = ESTADO_ESTILOS.abono;
   } else if (esPagado) {
-    tarjetaCls = 'bg-emerald-50/90 border-l-emerald-500 border border-emerald-200/60 text-emerald-950';
-  } else {
-    // Confirmado / Regular
-    if (colorHex) {
-      tarjetaCls = 'border border-slate-200/70 text-slate-900';
-      estiloColor = {
-        backgroundColor: `${colorHex}15`, // Fondo pastel sutil y limpio (~8% de opacidad)
-        borderLeftColor: colorHex,
-      };
-    } else {
-      tarjetaCls = 'bg-sky-50/90 border-l-sky-500 border border-sky-200/60 text-sky-950';
-    }
+    configEstado = ESTADO_ESTILOS.pagado;
+  } else if (esPendiente) {
+    configEstado = ESTADO_ESTILOS.pendiente;
   }
 
   return (
     <>
       <div
-        className={`absolute left-0 right-0 top-0 m-0.5 sm:m-1 rounded-lg sm:rounded-xl p-1 sm:p-2 flex flex-col items-center justify-center text-center border-l-4 shadow-2xs hover:shadow-sm transition-all duration-200 cursor-pointer overflow-hidden z-10 select-none animate-fade-in ${tarjetaCls}`}
-        style={{ height: `calc(${heightPercent}% - 6px)`, ...estiloColor }}
+        className={`absolute left-0 right-0 top-0 m-0.5 sm:m-1 bg-white border border-slate-200 rounded-xl p-1 sm:p-2 flex flex-col items-center justify-center text-center border-l-4 shadow-sm hover:shadow-md transition-all duration-200 cursor-pointer overflow-hidden z-10 select-none animate-fade-in ${configEstado.border}`}
+        style={{ height: `calc(${heightPercent}% - 6px)` }}
         onClick={() => {
           if (turno.estado !== 'pagado') {
             onAbrirCobro(turno);
@@ -402,34 +399,28 @@ function BloqueOcupado({ turno, colorHex, onAbrirCobro }) {
         }}
       >
         {/* Nombre del jugador */}
-        <p className="font-bold text-gray-800 text-xs sm:text-sm truncate w-full leading-tight capitalize">
+        <p className="font-bold text-slate-800 text-xs sm:text-sm truncate w-full leading-tight capitalize">
           {turno.cliente_nombre} {turno.cliente_apellido}
         </p>
 
         {/* Horario */}
-        <div className="text-[10px] sm:text-[11px] text-gray-500 mt-0.5 tabular-nums leading-none">
+        <div className="text-[10px] sm:text-[11px] text-slate-500 font-medium mt-0.5 tabular-nums leading-none">
           {turno.hora_inicio?.substring(0, 5)} -{' '}
           {calcularHoraFinReal(turno.hora_inicio?.substring(0, 5), turno.duracion_minutos || 90)}
         </div>
 
         {/* Cancha (redundante en mobile: la columna ya la identifica) */}
         {span >= 3 && (
-          <div className="hidden sm:block text-[10px] text-gray-400 uppercase font-medium mt-0.5 truncate w-full leading-none">
+          <div className="hidden sm:block text-[10px] text-slate-400 uppercase font-medium mt-0.5 truncate w-full leading-none">
             {turno.cancha_nombre || turno.cancha}
           </div>
         )}
 
         {/* Estado / Badge diferenciador */}
         <span
-          className={`mt-0.5 sm:mt-1 text-[9px] sm:text-[10px] font-semibold px-1.5 py-0.2 rounded-full w-fit leading-none ${
-            esAbono
-              ? 'bg-amber-100 text-amber-800'
-              : esPagado
-              ? 'bg-emerald-100 text-emerald-800'
-              : 'bg-sky-100 text-sky-800'
-          }`}
+          className={`mt-0.5 sm:mt-1 text-[9px] sm:text-[10px] font-semibold px-2 py-0.5 rounded-full w-fit leading-none shadow-2xs ${configEstado.badge}`}
         >
-          {esAbono ? 'Abono Fijo' : esPagado ? 'Pagado ✓' : 'Confirmado'}
+          {configEstado.label}
         </span>
 
         {/* Botón de menú */}
@@ -437,9 +428,9 @@ function BloqueOcupado({ turno, colorHex, onAbrirCobro }) {
           type="button"
           onClick={(e) => { e.stopPropagation(); setShowMenu(true); }}
           aria-label="Acciones del turno"
-          className="absolute top-1 right-1 sm:top-2 sm:right-2 w-7 sm:w-6 h-7 sm:h-6 rounded-lg flex items-center justify-center opacity-70 sm:opacity-40 hover:opacity-100 transition-opacity bg-white/70 hover:bg-white active:scale-90 shadow-2xs"
+          className="absolute top-1 right-1 sm:top-2 sm:right-2 w-7 sm:w-6 h-7 sm:h-6 rounded-lg flex items-center justify-center opacity-70 sm:opacity-40 hover:opacity-100 transition-opacity bg-white hover:bg-slate-100 active:scale-90 shadow-2xs"
         >
-          <MoreVertical className="w-4 h-4 text-slate-600" />
+          <MoreVertical className="w-3.5 h-3.5 text-slate-500" />
         </button>
       </div>
 
@@ -465,6 +456,7 @@ export default function AgendaDiaria({ fecha: fechaProp }) {
     incluyeManana,
     loading: cargandoContexto,
     recargar,
+    precioBaseCancha,
   } = useTurnos();
 
   const [fecha, setFecha] = useState(fechaProp ?? hoyISO);
@@ -704,15 +696,21 @@ export default function AgendaDiaria({ fecha: fechaProp }) {
 
       {/* ─── Leyenda ─── */}
       <div className="flex items-center gap-x-4 gap-y-2 px-1 flex-wrap shrink-0">
-        {Object.entries(ESTADO_ESTILOS).map(([key, val]) => (
-          <div key={key} className="flex items-center gap-1.5">
-            <div className={`w-3 h-3 rounded-sm border-l-[3px] ${val.border} ${val.bg}`} />
-            <span className="text-xs font-semibold text-slate-500">{val.label}</span>
-          </div>
-        ))}
         <div className="flex items-center gap-1.5">
-          <div className="w-3 h-3 rounded-sm border-l-[3px] border-amber-500 bg-amber-50" />
-          <span className="text-xs font-semibold text-slate-500">Abonado (Fijo)</span>
+          <div className="w-3 h-3 rounded-sm border border-slate-200 border-l-[3px] border-l-emerald-500 bg-white shadow-2xs" />
+          <span className="text-xs font-semibold text-slate-600">Pagado</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <div className="w-3 h-3 rounded-sm border border-slate-200 border-l-[3px] border-l-blue-500 bg-white shadow-2xs" />
+          <span className="text-xs font-semibold text-slate-600">Confirmado</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <div className="w-3 h-3 rounded-sm border border-slate-200 border-l-[3px] border-l-violet-500 bg-white shadow-2xs" />
+          <span className="text-xs font-semibold text-slate-600">Abono (Fijo)</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <div className="w-3 h-3 rounded-sm border border-slate-200 border-l-[3px] border-l-amber-500 bg-white shadow-2xs" />
+          <span className="text-xs font-semibold text-slate-600">Pendiente / Seña</span>
         </div>
         <div className="flex items-center gap-1.5">
           <div className="w-3 h-3 rounded-sm bg-slate-100 border border-dashed border-slate-300" />
@@ -728,6 +726,7 @@ export default function AgendaDiaria({ fecha: fechaProp }) {
           fecha={fecha}
           turnos={modal.turnos}
           horaApertura={horaApertura}
+          precioBase={precioBaseCancha}
           onClose={() => setModal(null)}
           onConfirm={async (nuevoTurno) => {
             await agregarTurno(nuevoTurno);

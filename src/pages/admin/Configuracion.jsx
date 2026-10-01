@@ -53,11 +53,13 @@ export default function Configuracion() {
   };
 
   // Estado de tarifas (buffer de edición; se persiste al guardar)
-  const [inputPrecioBase, setInputPrecioBase] = useState(String(precioBaseCancha));
+  const [inputPrecioBase, setInputPrecioBase] = useState(() => (precioBaseCancha ? String(precioBaseCancha) : ''));
   const [tarifaGuardada, setTarifaGuardada] = useState(false);
 
   useEffect(() => {
-    setInputPrecioBase(String(precioBaseCancha));
+    if (precioBaseCancha) {
+      setInputPrecioBase(String(precioBaseCancha));
+    }
   }, [precioBaseCancha]);
 
   // Estado de contacto
@@ -277,15 +279,23 @@ export default function Configuracion() {
                   setTarifaGuardada(false);
                 }}
                 className="w-full bg-white border border-slate-200 rounded-xl pl-9 pr-4 py-3 text-xl font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
-                placeholder="15000"
+                placeholder="Ej. 25000"
               />
             </div>
             <div className="flex items-start gap-2 mt-2.5">
               <Info className="w-3.5 h-3.5 text-slate-400 mt-0.5 shrink-0" />
               <p className="text-sm text-slate-500">
-                Este es el valor que se cobró por defecto en la grilla y sumará a la Caja Diaria.
+                Este es el valor que se cobra por defecto en la grilla y sumará a la Caja Diaria.
                 <span className="block mt-1 text-xs text-slate-400">
-                  Vigente: <span className="font-bold text-slate-700">${Number(precioBaseCancha).toLocaleString('es-AR')}</span> por turno.
+                  Vigente:{' '}
+                  {precioBaseCancha === null ? (
+                    <span className="inline-block h-3.5 w-16 bg-slate-200 animate-pulse rounded align-middle" />
+                  ) : (
+                    <span className="font-bold text-slate-700">
+                      ${Number(precioBaseCancha).toLocaleString('es-AR')}
+                    </span>
+                  )}{' '}
+                  por turno.
                 </span>
               </p>
             </div>

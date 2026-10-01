@@ -18,7 +18,7 @@ import {
   CreditCard,
   Coins,
 } from 'lucide-react';
-import { formatearMetodoPagoMixto, calcularTotalesMixtos } from '../utils/paymentHelpers';
+import { formatearMetodoPagoMixto, calcularTotalesMixtos, resolverPrecioCancha } from '../utils/paymentHelpers';
 
 const METODOS_PAGO = [
   { id: 'efectivo', label: 'Efectivo', icon: Banknote },
@@ -30,8 +30,10 @@ export default function ModalCobro({ isOpen, onClose, turno, onConfirmarCobro })
   const { articulos, ajustarStock } = useArticulos();
   const { precioBaseCancha } = useTurnos();
 
-  // Monto base de la cancha: viene de Configuración y es editable por turno
-  const [totalBaseCancha, setTotalBaseCancha] = useState(precioBaseCancha);
+  // Monto base de la cancha: viene del turno consolidado en Supabase o de la Configuración general
+  const [totalBaseCancha, setTotalBaseCancha] = useState(() =>
+    resolverPrecioCancha(turno, precioBaseCancha)
+  );
   const [editandoBase, setEditandoBase] = useState(false);
   const [gastosCompartidos, setGastosCompartidos] = useState([]);
   const [modalGastoCompartido, setModalGastoCompartido] = useState(false);
@@ -82,24 +84,43 @@ export default function ModalCobro({ isOpen, onClose, turno, onConfirmarCobro })
     });
   }, [division, turno]);
 
-  // Resetear el modal cada vez que se abre con un turno nuevo
+  // Sincronizar el modal cada vez que se abre con un turno
   useEffect(() => {
-    if (!isOpen) return;
-    // Arrancamos siempre con la tarifa vigente de Configuración
-    setTotalBaseCancha(precioBaseCancha);
+    if (!isOpen || !turno) return;
+    // Fuente de la Verdad: si el turno ya tiene un precio asignado en Supabase, respetarlo
+    const precioResuelto = resolverPrecioCancha(turno, precioBaseCancha);
+    setTotalBaseCancha(precioResuelto);
     setEditandoBase(false);
-    setGastosCompartidos([]);
+
+    // Restaurar gastos compartidos si el turno ya los tenía guardados en Supabase
+    setGastosCompartidos(Array.isArray(turno.gastos_compartidos) ? turno.gastos_compartidos : []);
     setModalGastoCompartido(false);
     setConceptoGasto('');
     setMontoGasto('');
     setJugadorKioscoActivo(null);
     setBusquedaKiosco('');
     setAvisoStock(null);
-    setDivision(4);
+
+    // Restaurar jugadores si ya existen en detalle_cobro
+    if (Array.isArray(turno.detalle_cobro) && turno.detalle_cobro.length > 0) {
+      setDivision(turno.detalle_cobro.length);
+      setJugadores(
+        turno.detalle_cobro.map((j) => ({
+          id: j.id,
+          nombre: j.nombre || `Jugador ${j.id}`,
+          itemsKiosco: Array.isArray(j.items) ? j.items : [],
+          pagado: Boolean(j.pagado),
+          metodoPago: j.metodo_pago || 'efectivo',
+        }))
+      );
+    } else {
+      setDivision(4);
+    }
+
     setJugadorParaCobro(null);
     setMetodoPagoModal('efectivo');
     setMontosMixtos({ efectivo: '', transferencia: '', tarjeta: '' });
-  }, [isOpen, turno?.id, precioBaseCancha]);
+  }, [isOpen, turno?.id, turno?.total_base_cancha, turno?.precio, precioBaseCancha]);
 
   // Manejo de atajo Escape para cerrar sub-modales
   useEffect(() => {
@@ -131,7 +152,7 @@ export default function ModalCobro({ isOpen, onClose, turno, onConfirmarCobro })
 
   // Cálculo de totales compartidos
   const totalGastosExtra = gastosCompartidos.reduce((sum, g) => sum + g.monto, 0);
-  const totalCanchaYGastos = totalBaseCancha + totalGastosExtra;
+  const totalCanchaYGastos = (Number(totalBaseCancha) || 0) + totalGastosExtra;
   const cuotaCanchaPorJugador = Math.round(totalCanchaYGastos / division);
 
   // Total de kiosco general
@@ -302,11 +323,12 @@ export default function ModalCobro({ isOpen, onClose, turno, onConfirmarCobro })
   }, [articulos, busquedaKiosco]);
 
   const formatearPrecio = (valor) => {
+    if (valor === null || valor === undefined) return '—';
     return new Intl.NumberFormat('es-AR', {
       style: 'currency',
       currency: 'ARS',
       maximumFractionDigits: 0,
-    }).format(valor);
+    }).format(Number(valor) || 0);
   };
 
   // Todos los hooks ya se ejecutaron: ahora sí se puede cortar el render
@@ -374,7 +396,12 @@ export default function ModalCobro({ isOpen, onClose, turno, onConfirmarCobro })
                 <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400 block">
                   Total Base Cancha
                 </span>
-                {editandoBase ? (
+                {totalBaseCancha === null ? (
+                  <div className="flex items-center gap-2 mt-1">
+                    <div className="h-6 w-24 bg-zinc-800 animate-pulse rounded" />
+                    <span className="text-xs text-zinc-500 font-medium">Cargando...</span>
+                  </div>
+                ) : editandoBase ? (
                   <div className="flex items-center gap-2 mt-0.5">
                     <span className="text-white font-black text-lg">$</span>
                     <input
@@ -387,15 +414,16 @@ export default function ModalCobro({ isOpen, onClose, turno, onConfirmarCobro })
                       onChange={(e) => setTotalBaseCancha(e.target.value)}
                       onBlur={() => {
                         const n = Number(totalBaseCancha);
+                        const fallback = resolverPrecioCancha(turno, precioBaseCancha);
                         setTotalBaseCancha(
-                          Number.isFinite(n) && n > 0 ? Math.round(n) : precioBaseCancha
+                          Number.isFinite(n) && n > 0 ? Math.round(n) : fallback
                         );
                         setEditandoBase(false);
                       }}
                       onKeyDown={(e) => {
                         if (e.key === 'Enter') e.currentTarget.blur();
                         if (e.key === 'Escape') {
-                          setTotalBaseCancha(precioBaseCancha);
+                          setTotalBaseCancha(resolverPrecioCancha(turno, precioBaseCancha));
                           setEditandoBase(false);
                         }
                       }}
@@ -428,9 +456,13 @@ export default function ModalCobro({ isOpen, onClose, turno, onConfirmarCobro })
                 <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400 block">
                   Por Jugador (Cancha)
                 </span>
-                <span className="text-lg font-black text-amber-400 tabular-nums">
-                  {formatearPrecio(cuotaCanchaPorJugador)}
-                </span>
+                {totalBaseCancha === null ? (
+                  <div className="h-6 w-16 bg-zinc-800 animate-pulse rounded mt-1" />
+                ) : (
+                  <span className="text-lg font-black text-amber-400 tabular-nums">
+                    {formatearPrecio(cuotaCanchaPorJugador)}
+                  </span>
+                )}
               </div>
             </div>
 
