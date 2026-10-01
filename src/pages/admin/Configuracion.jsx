@@ -11,6 +11,9 @@ import {
   Clock,
   AlertTriangle,
   RefreshCw,
+  PauseCircle,
+  PlayCircle,
+  Calendar,
 } from 'lucide-react';
 import { useTheme } from '../../context/ThemeContext';
 import { useTurnos } from '../../context/TurnosContext';
@@ -26,6 +29,8 @@ export default function Configuracion() {
     setPrecioBaseCancha,
     incluyeManana,
     setIncluyeManana,
+    diasVisibles,
+    setDiasVisibles,
     canchas,
     actualizarCancha,
     modoLocal,
@@ -87,6 +92,41 @@ export default function Configuracion() {
   const guardarDatos = () => {
     setDatosGuardados(true);
     setTimeout(() => setDatosGuardados(false), 3000);
+  };
+
+  // Estado para notificaciones de canchas
+  const [avisoCancha, setAvisoCancha] = useState(null);
+  const [guardandoCanchaId, setGuardandoCanchaId] = useState(null);
+
+  const togglePausarCancha = async (cancha) => {
+    const nuevoEstado = cancha.activa === false ? true : false;
+    setGuardandoCanchaId(cancha.id);
+    try {
+      await actualizarCancha(cancha.id, { activa: nuevoEstado });
+      setAvisoCancha({
+        tipo: 'exito',
+        texto: `Cancha "${cancha.nombre}" ${nuevoEstado ? 'habilitada' : 'pausada'} con éxito.`
+      });
+      setTimeout(() => setAvisoCancha(null), 3500);
+    } catch (err) {
+      console.error('Error al actualizar estado de la cancha:', err);
+      setAvisoCancha({
+        tipo: 'error',
+        texto: 'No se pudo actualizar el estado de la cancha.'
+      });
+      setTimeout(() => setAvisoCancha(null), 3500);
+    } finally {
+      setGuardandoCanchaId(null);
+    }
+  };
+
+  // Estado para feedback de rango de días
+  const [diasGuardado, setDiasGuardado] = useState(false);
+
+  const cambiarDiasVisibles = (dias) => {
+    setDiasVisibles(Number(dias));
+    setDiasGuardado(true);
+    setTimeout(() => setDiasGuardado(false), 3000);
   };
 
   return (
@@ -335,52 +375,115 @@ export default function Configuracion() {
               Gestión de Canchas
             </h2>
             <p className="text-xs text-slate-400 font-medium">
-              Configura los nombres y colores distintivos de cada cancha.
+              Configura los nombres, colores y disponibilidad (pausar por lluvia, feriado o mantenimiento).
             </p>
           </div>
         </div>
+
+        {/* Notificación de éxito / error */}
+        {avisoCancha && (
+          <div className={`mx-4 sm:mx-6 mt-4 p-3 rounded-xl border flex items-center gap-2.5 text-xs font-bold animate-fade-in ${
+            avisoCancha.tipo === 'exito'
+              ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+              : 'bg-rose-50 border-rose-200 text-rose-800'
+          }`}>
+            <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600" />
+            <span>{avisoCancha.texto}</span>
+          </div>
+        )}
+
         <div className="p-4 sm:p-6 flex flex-col gap-4">
-          {canchas.map((cancha) => (
-            <div key={cancha.id} className="flex flex-col sm:flex-row gap-4 items-start sm:items-center p-4 bg-slate-50 rounded-xl border border-slate-100">
-              <div className="flex-1 w-full">
-                <label className="block text-xs font-bold text-slate-500 mb-1.5 uppercase tracking-wide">
-                  Nombre de la Cancha
-                </label>
-                <input
-                  type="text"
-                  defaultValue={cancha.nombre}
-                  onBlur={(e) => {
-                    if (e.target.value !== cancha.nombre) {
-                      actualizarCancha(cancha.id, { nombre: e.target.value });
-                    }
-                  }}
-                  className="w-full bg-white border border-slate-200 rounded-xl px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900"
-                />
-              </div>
-              <div className="w-full sm:w-auto flex items-end gap-3">
-                <div className="flex-1">
-                  <label className="block text-xs font-bold text-slate-500 mb-1.5 uppercase tracking-wide">
-                    Color Visual
-                  </label>
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="color"
-                      defaultValue={cancha.color_identificador || '#64748b'}
-                      onBlur={(e) => {
-                        if (e.target.value !== cancha.color_identificador) {
-                          actualizarCancha(cancha.id, { color_identificador: e.target.value });
-                        }
-                      }}
-                      className="w-10 h-10 p-1 bg-white border border-slate-200 rounded-lg cursor-pointer"
-                    />
-                    <span className="text-xs font-medium text-slate-400">
-                      Hex
-                    </span>
+          {canchas.map((cancha) => {
+            const estaPausada = cancha.activa === false;
+
+            return (
+              <div
+                key={cancha.id}
+                className={`flex flex-col sm:flex-row gap-4 items-start sm:items-center p-4 rounded-xl border transition-all duration-200 ${
+                  estaPausada
+                    ? 'bg-amber-50/80 border-amber-300 shadow-2xs'
+                    : 'bg-slate-50 border-slate-200/80'
+                }`}
+              >
+                <div className="flex-1 w-full">
+                  <div className="flex items-center gap-2 mb-1.5">
+                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide">
+                      Nombre de la Cancha
+                    </label>
+                    {estaPausada && (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-amber-200 text-amber-900 border border-amber-300">
+                        ⚠️ Pausada / Feriado
+                      </span>
+                    )}
+                  </div>
+                  <input
+                    type="text"
+                    defaultValue={cancha.nombre}
+                    onBlur={(e) => {
+                      if (e.target.value !== cancha.nombre) {
+                        actualizarCancha(cancha.id, { nombre: e.target.value });
+                      }
+                    }}
+                    className="w-full bg-white border border-slate-200 rounded-xl px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900"
+                  />
+                </div>
+
+                <div className="w-full sm:w-auto flex items-end gap-3">
+                  {/* Selector de color */}
+                  <div className="flex-1 sm:flex-initial">
+                    <label className="block text-xs font-bold text-slate-500 mb-1.5 uppercase tracking-wide">
+                      Color
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="color"
+                        defaultValue={cancha.color_identificador || '#64748b'}
+                        onBlur={(e) => {
+                          if (e.target.value !== cancha.color_identificador) {
+                            actualizarCancha(cancha.id, { color_identificador: e.target.value });
+                          }
+                        }}
+                        className="w-10 h-10 p-1 bg-white border border-slate-200 rounded-lg cursor-pointer"
+                      />
+                      <span className="text-xs font-medium text-slate-400">
+                        Hex
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Botón de Pausar / Habilitar Cancha */}
+                  <div className="flex-1 sm:flex-initial">
+                    <label className="block text-xs font-bold text-slate-500 mb-1.5 uppercase tracking-wide">
+                      Disponibilidad
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => togglePausarCancha(cancha)}
+                      disabled={guardandoCanchaId === cancha.id}
+                      className={`h-10 px-3.5 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 active:scale-95 cursor-pointer disabled:opacity-50 whitespace-nowrap ${
+                        estaPausada
+                          ? 'bg-amber-500 hover:bg-amber-600 text-white shadow-xs'
+                          : 'bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 shadow-2xs'
+                      }`}
+                      title={estaPausada ? 'Habilitar cancha para reservas' : 'Pausar cancha por lluvia, feriado o mantenimiento'}
+                    >
+                      {estaPausada ? (
+                        <>
+                          <PlayCircle className="w-4 h-4 text-white" />
+                          <span>Habilitar Cancha</span>
+                        </>
+                      ) : (
+                        <>
+                          <PauseCircle className="w-4 h-4 text-amber-600" />
+                          <span>Pausar Cancha</span>
+                        </>
+                      )}
+                    </button>
                   </div>
                 </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
 
@@ -422,6 +525,90 @@ export default function Configuracion() {
               <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-punto-brand"></div>
             </div>
           </label>
+        </div>
+      </div>
+
+      {/* ─── Sección: Anticipación de Reservas para Clientes ─── */}
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+        {/* Cabecera de tarjeta */}
+        <div className="bg-slate-50 px-4 sm:px-6 py-3.5 sm:py-4 border-b border-slate-200 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center">
+              <Calendar className="w-4 h-4" />
+            </div>
+            <div>
+              <h2 className="font-bold text-slate-900 text-base">
+                Días Visibles para el Cliente
+              </h2>
+              <p className="text-xs text-slate-400 font-medium">
+                Controla con cuánta anticipación los jugadores pueden ver fechas y reservar canchas.
+              </p>
+            </div>
+          </div>
+          {diasGuardado && (
+            <div className="flex items-center gap-1.5 text-emerald-600 text-xs font-bold animate-fade-in bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-lg">
+              <CheckCircle2 className="w-4 h-4" />
+              <span>Guardado</span>
+            </div>
+          )}
+        </div>
+
+        {/* Cuerpo */}
+        <div className="p-4 sm:p-6 space-y-4">
+          <div>
+            <label className="block text-[11px] font-black text-slate-500 uppercase tracking-wider mb-2.5">
+              Rango de Días Hacia Adelante (Anticipación)
+            </label>
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+              {/* Botones de opción rápida */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 flex-1 max-w-xl">
+                {[
+                  { valor: 7, label: '7 días', desc: '1 semana' },
+                  { valor: 14, label: '14 días', desc: '2 semanas' },
+                  { valor: 21, label: '21 días', desc: '3 semanas' },
+                  { valor: 30, label: '30 días', desc: '1 mes' },
+                ].map((opcion) => {
+                  const activo = Number(diasVisibles) === opcion.valor;
+                  return (
+                    <button
+                      key={opcion.valor}
+                      type="button"
+                      onClick={() => cambiarDiasVisibles(opcion.valor)}
+                      className={`flex flex-col items-center justify-center px-4 py-3 rounded-xl border text-center transition-all cursor-pointer ${
+                        activo
+                          ? 'bg-blue-50 border-blue-500 text-blue-900 font-bold shadow-xs ring-1 ring-blue-500'
+                          : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50 hover:border-slate-300'
+                      }`}
+                    >
+                      <span className="text-sm font-extrabold">{opcion.label}</span>
+                      <span className="text-[10px] text-slate-400 font-medium leading-none mt-1">{opcion.desc}</span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Selector alternativo <select> */}
+              <div className="sm:ml-auto flex items-center gap-2">
+                <span className="text-xs font-semibold text-slate-400 hidden lg:inline">Personalizado:</span>
+                <select
+                  value={diasVisibles}
+                  onChange={(e) => cambiarDiasVisibles(e.target.value)}
+                  className="w-full sm:w-auto bg-white border border-slate-200 rounded-xl px-3.5 py-3 text-sm font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer shadow-2xs"
+                >
+                  <option value={7}>7 días (1 semana)</option>
+                  <option value={10}>10 días</option>
+                  <option value={14}>14 días (2 semanas)</option>
+                  <option value={21}>21 días (3 semanas)</option>
+                  <option value={28}>28 días (4 semanas)</option>
+                  <option value={30}>30 días (1 mes)</option>
+                  <option value={60}>60 días (2 meses)</option>
+                </select>
+              </div>
+            </div>
+            <p className="text-xs text-slate-400 mt-3 font-medium">
+              Actualmente los clientes verán <strong className="text-slate-800 font-bold">{diasVisibles} días</strong> a partir de la fecha de hoy en el carrusel de la página de reservas.
+            </p>
+          </div>
         </div>
       </div>
 

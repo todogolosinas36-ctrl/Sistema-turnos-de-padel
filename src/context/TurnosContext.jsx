@@ -11,6 +11,7 @@ const LS_NOMBRE_CLUB = '2010-nombreClub';
 const LS_COLOR_CLUB = '2010-colorClub';
 const LS_PRECIO_BASE = 'puntoexe-precio-base';
 const LS_MANANA = 'puntoexe-manana';
+const LS_DIAS_ANTICIPACION = 'puntoexe-dias-anticipacion';
 
 const DIAS_SEMANA = [
   'Lunes',
@@ -132,9 +133,12 @@ export function TurnosProvider({ children }) {
   const modoLocal = falla !== null;
 
   /* ─── Configuración (preferencias del dispositivo → localStorage) ─── */
-  const [nombreClub, setNombreClubState] = useState(
-    () => localStorage.getItem(LS_NOMBRE_CLUB) || 'Mi Complejo'
-  );
+  const [nombreClub, setNombreClubState] = useState(() => {
+    const guardado = localStorage.getItem(LS_NOMBRE_CLUB);
+    if (guardado && guardado !== 'Mi Complejo') return guardado;
+    const envVal = import.meta.env.VITE_NOMBRE_COMPLEJO?.replace(/^"|"$/g, '');
+    return envVal ? `${envVal} PÁDEL` : '20/10 PÁDEL';
+  });
   const [colorClub, setColorClubState] = useState(
     () => localStorage.getItem(LS_COLOR_CLUB) || '#09090b'
   );
@@ -183,6 +187,20 @@ export function TurnosProvider({ children }) {
     setIncluyeMananaState((prev) => {
       const valor = typeof nuevo === 'function' ? nuevo(prev) : Boolean(nuevo);
       localStorage.setItem(LS_MANANA, String(valor));
+      return valor;
+    });
+  }, []);
+
+  const [diasVisibles, setDiasVisiblesState] = useState(() => {
+    const n = Number(localStorage.getItem(LS_DIAS_ANTICIPACION));
+    return Number.isFinite(n) && n > 0 ? n : 7;
+  });
+
+  const setDiasVisibles = useCallback((nuevo) => {
+    setDiasVisiblesState((prev) => {
+      const bruto = typeof nuevo === 'function' ? nuevo(prev) : Number(nuevo);
+      const valor = Number.isFinite(bruto) && bruto > 0 ? Math.round(bruto) : 7;
+      localStorage.setItem(LS_DIAS_ANTICIPACION, String(valor));
       return valor;
     });
   }, []);
@@ -493,24 +511,29 @@ export function TurnosProvider({ children }) {
 
   const actualizarCancha = useCallback(
     async (id, cambios) => {
+      // Actualización optimista inmediata en la UI
+      setCanchas((prev) => prev.map((c) => (c.id === id ? { ...c, ...cambios } : c)));
+
       if (modoLocal) {
-        setCanchas((prev) => prev.map((c) => (c.id === id ? { ...c, ...cambios } : c)));
-        return null;
+        return { id, ...cambios };
       }
+
       const { data, error } = await supabase
         .from('canchas')
         .update(cambios)
         .eq('id', id)
-        .select()
-        .single();
+        .select();
       
       if (error) {
         console.error('[Turnos] Error al actualizar cancha:', error.message);
         throw error;
       }
       
-      setCanchas((prev) => prev.map((c) => (c.id === id ? { ...c, ...data } : c)));
-      return data;
+      if (data && data.length > 0) {
+        setCanchas((prev) => prev.map((c) => (c.id === id ? { ...c, ...data[0] } : c)));
+        return data[0];
+      }
+      return { id, ...cambios };
     },
     [modoLocal]
   );
@@ -605,7 +628,6 @@ export function TurnosProvider({ children }) {
       value={{
         // datos
         canchas,
-        canchas,
         canchasActivas,
         actualizarCancha,
         nombreCancha,
@@ -636,6 +658,8 @@ export function TurnosProvider({ children }) {
         setPrecioBaseCancha,
         incluyeManana,
         setIncluyeManana,
+        diasVisibles,
+        setDiasVisibles,
       }}
     >
       {children}

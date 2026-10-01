@@ -6,7 +6,6 @@ import { MessageCircle, CheckCircle, X, MapPin, CalendarDays, Clock, AlertTriang
 export default function ReservaModal({ isOpen, onClose, datosReserva, onSuccess }) {
   const { agregarTurno, precioBaseCancha } = useTurnos();
   const [nombre, setNombre] = useState('');
-  const [apellido, setApellido] = useState('');
   const [telefono, setTelefono] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -16,7 +15,6 @@ export default function ReservaModal({ isOpen, onClose, datosReserva, onSuccess 
   useEffect(() => {
     if (isOpen) {
       setNombre('');
-      setApellido('');
       setTelefono('');
       setLoading(false);
       setError(null);
@@ -47,7 +45,7 @@ export default function ReservaModal({ isOpen, onClose, datosReserva, onSuccess 
         hora_fin: horaFin,
         duracion_minutos: Number(duracion),
         cliente_nombre: nombre.trim(),
-        cliente_apellido: apellido.trim(),
+        cliente_apellido: '',
         cliente_telefono: telefono.trim(),
         estado: 'confirmado',
         origen: 'cliente',
@@ -73,7 +71,7 @@ export default function ReservaModal({ isOpen, onClose, datosReserva, onSuccess 
   const numeroWhatsApp = import.meta.env.VITE_WHATSAPP_COMPLEJO || '';
   const nombreComplejo = import.meta.env.VITE_NOMBRE_COMPLEJO || 'el complejo';
 
-  let mensajeWhatsApp = `Hola ${nombreComplejo}, soy ${nombre} ${apellido}. Reservé el turno en ${cancha?.nombre} para el ${fecha} a las ${horaInicio} hs. ¡Nos vemos!`;
+  let mensajeWhatsApp = `Hola ${nombreComplejo}, soy ${nombre.trim()}. Reservé el turno en ${cancha?.nombre} para el ${fecha} a las ${horaInicio} hs. ¡Nos vemos!`;
   if (turnoInsertado?.token_cancelacion) {
     mensajeWhatsApp += `\n\nPara cancelar en caso de imprevisto: ${window.location.origin}/?token=${turnoInsertado.token_cancelacion}`;
   }
@@ -139,31 +137,24 @@ export default function ReservaModal({ isOpen, onClose, datosReserva, onSuccess 
             </div>
 
             {/* Formulario */}
-            <form onSubmit={handleSubmit} className="space-y-3">
+            <form onSubmit={handleSubmit} className="space-y-4">
               <div>
-                <label className="block text-xs font-bold text-zinc-500 uppercase tracking-wider mb-1.5">Nombre</label>
+                <label className="block text-xs font-bold text-zinc-500 uppercase tracking-wider mb-1.5">
+                  Nombre y Apellido
+                </label>
                 <input
                   type="text"
                   required
                   value={nombre}
                   onChange={(e) => setNombre(e.target.value)}
-                  placeholder="Tu nombre"
+                  placeholder="Ej. Juan Pérez"
                   className={inputClass}
                 />
               </div>
               <div>
-                <label className="block text-xs font-bold text-zinc-500 uppercase tracking-wider mb-1.5">Apellido</label>
-                <input
-                  type="text"
-                  required
-                  value={apellido}
-                  onChange={(e) => setApellido(e.target.value)}
-                  placeholder="Tu apellido"
-                  className={inputClass}
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-zinc-500 uppercase tracking-wider mb-1.5">Teléfono</label>
+                <label className="block text-xs font-bold text-zinc-500 uppercase tracking-wider mb-1.5">
+                  Teléfono
+                </label>
                 <input
                   type="tel"
                   required

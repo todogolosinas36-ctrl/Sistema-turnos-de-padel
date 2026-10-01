@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import ReservaModal from '../../components/ReservaModal';
 import { Frown } from 'lucide-react';
 import { useTurnos } from '../../context/TurnosContext';
@@ -57,7 +57,7 @@ export default function Home() {
   const [duracion, setDuracion] = useState(90);
   const [reservaActiva, setReservaActiva] = useState(null);
 
-  const { canchasActivas, obtenerTurnosDelDia, incluyeManana, loading } = useTurnos();
+  const { canchas, obtenerTurnosDelDia, incluyeManana, loading, diasVisibles, nombreClub } = useTurnos();
 
   const esHoy = fecha === hoyISO();
 
@@ -66,7 +66,17 @@ export default function Home() {
     [obtenerTurnosDelDia, fecha]
   );
 
-  const dias = useMemo(() => generarProximosDias(7, fecha < hoyISO() ? hoyISO() : fecha), [fecha]);
+  const dias = useMemo(() => {
+    const cantidad = Number(diasVisibles) > 0 ? Number(diasVisibles) : 7;
+    return generarProximosDias(cantidad, hoyISO());
+  }, [diasVisibles]);
+
+  // Si la fecha seleccionada quedó fuera del rango visible, resetear a hoy
+  useEffect(() => {
+    if (dias.length > 0 && !dias.some((d) => d.value === fecha)) {
+      setFecha(dias[0].value);
+    }
+  }, [dias, fecha]);
 
   const duracionSeleccionada = parseInt(duracion, 10);
   const horaInicioNum = incluyeManana ? 8 : 14;
@@ -90,7 +100,12 @@ export default function Home() {
 
   const canchasConDisponibilidad = useMemo(() => {
     const ahora = Date.now();
-    return canchasActivas.map((cancha) => {
+    return canchas.map((cancha) => {
+      const estaPausada = cancha.activa === false;
+      if (estaPausada) {
+        return { ...cancha, estaPausada: true, bloquesLibres: [] };
+      }
+
       const bloquesLibres = [];
       for (let h = horaInicioNum; h <= horaFinNum; h += 0.5) {
         const horas = Math.floor(h);
@@ -105,33 +120,31 @@ export default function Home() {
           bloquesLibres.push({ hora: horaStr, vencido });
         }
       }
-      return { ...cancha, bloquesLibres };
+      return { ...cancha, estaPausada: false, bloquesLibres };
     });
-  }, [canchasActivas, estaOcupado, horaInicioNum, horaFinNum, duracionSeleccionada, esHoy, fecha]);
+  }, [canchas, estaOcupado, horaInicioNum, horaFinNum, duracionSeleccionada, esHoy, fecha]);
 
   const hayDisponibilidad = canchasConDisponibilidad.some((c) =>
-    c.bloquesLibres.some((b) => !b.vencido)
+    !c.estaPausada && c.bloquesLibres.some((b) => !b.vencido)
   );
+
+  const hayCanchasPausadas = canchasConDisponibilidad.some((c) => c.estaPausada);
 
   return (
     <div className="flex flex-col w-full pb-20 text-slate-100">
 
-      {/* ── Hero ── */}
-      <section className="px-5 sm:px-8 pt-8 pb-6 border-b border-slate-800/60">
-        {/* Badge de disponibilidad */}
-        <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-[11px] uppercase tracking-wider font-bold mb-4 shadow-sm shadow-emerald-500/10">
-          <span className="relative flex h-2 w-2">
-            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
-            <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
-          </span>
-          Disponibilidad en tiempo real
-        </div>
-
-        <h1 className="text-3xl sm:text-4xl font-black tracking-tight text-white leading-tight">
-          Reserva tu cancha{' '}
-          <span className="text-emerald-400">en segundos</span>
+      {/* ── Hero con Nombre del Club ── */}
+      <section className="px-5 sm:px-8 pt-8 pb-6 border-b border-slate-800/60 text-center flex flex-col items-center justify-center">
+        {/* Nombre del Club Dinámico y Llamativo */}
+        <h1 className="text-3xl sm:text-5xl md:text-6xl font-black uppercase tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-white via-slate-100 to-emerald-400 drop-shadow-sm select-none">
+          {nombreClub || '20/10 PÁDEL'}
         </h1>
-        <p className="text-sm text-slate-400 mt-2 font-medium">
+
+        <p className="text-sm sm:text-base font-bold text-emerald-400 tracking-wide mt-2">
+          Reserva tu cancha en segundos
+        </p>
+
+        <p className="text-xs sm:text-sm text-slate-400 mt-1 max-w-md font-medium text-center">
           Elegí el día, horario y confirmá tu turno sin esperas.
         </p>
       </section>
@@ -211,11 +224,11 @@ export default function Home() {
         </div>
       ) : (
         <div className="px-5 sm:px-8 py-6 flex flex-col gap-5">
-          {canchasActivas.length === 0 ? (
+          {canchas.length === 0 ? (
             <div className="text-center py-16 text-slate-500 text-sm font-medium">
               No hay canchas registradas en el sistema.
             </div>
-          ) : !hayDisponibilidad ? (
+          ) : !hayDisponibilidad && !hayCanchasPausadas ? (
             <div className="flex flex-col items-center justify-center py-16 text-center bg-slate-900/60 rounded-3xl border border-slate-800/60">
               <div className="w-16 h-16 bg-slate-800 rounded-full flex items-center justify-center mb-4 border border-slate-700">
                 <Frown className="w-8 h-8 text-slate-500" />
@@ -226,35 +239,60 @@ export default function Home() {
               </p>
             </div>
           ) : (
-            canchasConDisponibilidad
-              .filter((cancha) => cancha.bloquesLibres.length > 0)
-              .map((cancha) => (
+            canchasConDisponibilidad.map((cancha) => (
+              <div
+                key={cancha.id}
+                className={`bg-slate-900/60 rounded-2xl border overflow-hidden backdrop-blur-sm transition-all ${
+                  cancha.estaPausada ? 'border-amber-500/30 bg-amber-950/10' : 'border-slate-800/60'
+                }`}
+              >
+                {/* Barra de color superior de la cancha */}
                 <div
-                  key={cancha.id}
-                  className="bg-slate-900/60 rounded-2xl border border-slate-800/60 overflow-hidden backdrop-blur-sm"
-                >
-                  {/* Barra de color superior de la cancha */}
-                  <div
-                    className="h-1 w-full"
-                    style={{ backgroundColor: cancha.color_identificador || '#10b981' }}
-                  />
+                  className="h-1 w-full"
+                  style={{ backgroundColor: cancha.estaPausada ? '#f59e0b' : (cancha.color_identificador || '#10b981') }}
+                />
 
-                  <div className="p-4 sm:p-5">
-                    {/* Header de la cancha */}
-                    <div className="flex items-center gap-2.5 mb-5">
-                      <div
-                        className="w-2 h-2 rounded-full flex-shrink-0"
-                        style={{ backgroundColor: cancha.color_identificador || '#10b981', boxShadow: `0 0 6px ${cancha.color_identificador || '#10b981'}80` }}
-                      />
-                      <h3 className="font-bold text-slate-100 text-base tracking-wide uppercase">
-                        {cancha.nombre}
-                      </h3>
+                <div className="p-4 sm:p-5">
+                  {/* Header de la cancha */}
+                  <div className="flex items-center gap-2.5 mb-5">
+                    <div
+                      className="w-2 h-2 rounded-full flex-shrink-0"
+                      style={{
+                        backgroundColor: cancha.estaPausada ? '#f59e0b' : (cancha.color_identificador || '#10b981'),
+                        boxShadow: `0 0 6px ${cancha.estaPausada ? '#f59e0b' : (cancha.color_identificador || '#10b981')}80`
+                      }}
+                    />
+                    <h3 className="font-bold text-slate-100 text-base tracking-wide uppercase">
+                      {cancha.nombre}
+                    </h3>
+                    {cancha.estaPausada ? (
+                      <span className="ml-auto text-[10px] font-bold text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-full uppercase tracking-wider">
+                        Pausada
+                      </span>
+                    ) : (
                       <span className="ml-auto text-[10px] font-semibold text-slate-500 uppercase tracking-wider">
                         {cancha.bloquesLibres.filter((b) => !b.vencido).length} disponibles
                       </span>
-                    </div>
+                    )}
+                  </div>
 
-                    {/* Grilla de horarios */}
+                  {cancha.estaPausada ? (
+                    /* Tarjetón con mensaje amigable cuando la cancha está pausada */
+                    <div className="py-8 px-4 rounded-xl border border-amber-500/20 bg-amber-500/5 text-center flex flex-col items-center justify-center gap-2">
+                      <span className="text-2xl">⚠️</span>
+                      <p className="text-sm font-bold text-amber-200">
+                        Cancha temporalmente no disponible (Feriado/Mantenimiento)
+                      </p>
+                      <p className="text-xs text-slate-400 max-w-sm">
+                        Esta cancha no se encuentra disponible para reservas en este momento.
+                      </p>
+                    </div>
+                  ) : cancha.bloquesLibres.length === 0 || cancha.bloquesLibres.every((b) => b.vencido) ? (
+                    <div className="py-6 text-center text-xs text-slate-500 font-medium">
+                      No hay horarios disponibles para esta cancha en la fecha seleccionada.
+                    </div>
+                  ) : (
+                    /* Grilla de horarios */
                     <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-2.5">
                       {cancha.bloquesLibres.map(({ hora: bloque, vencido }) => {
                         const horaFin = calcularHoraFin(bloque, duracion);
@@ -293,9 +331,10 @@ export default function Home() {
                         );
                       })}
                     </div>
-                  </div>
+                  )}
                 </div>
-              ))
+              </div>
+            ))
           )}
         </div>
       )}

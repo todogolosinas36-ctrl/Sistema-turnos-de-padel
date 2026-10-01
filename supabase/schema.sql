@@ -189,6 +189,7 @@ create policy "turnos delete sólo admin"
   on public.turnos for delete to authenticated using (true);
 
 -- ─── canchas ───────────────────────────────────────────────────────────────
+alter table public.canchas add column if not exists activa boolean default true;
 alter table public.canchas enable row level security;
 
 drop policy if exists "canchas lectura pública" on public.canchas;

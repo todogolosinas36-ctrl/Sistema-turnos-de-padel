@@ -593,6 +593,7 @@ export default function AgendaDiaria({ fecha: fechaProp }) {
     obtenerTurnosDelDia,
     agregarTurno,
     cambiarEstado,
+    canchas,
     canchasActivas,
     incluyeManana,
     loading: cargandoContexto,
@@ -610,7 +611,6 @@ export default function AgendaDiaria({ fecha: fechaProp }) {
     [horaApertura]
   );
 
-  const canchas = canchasActivas;
   const grilla = grillaDe(canchas.length);
   const loading = cargandoContexto;
 
@@ -711,8 +711,13 @@ export default function AgendaDiaria({ fecha: fechaProp }) {
             <button
               type="button"
               onClick={() => {
+                const canchasHabilitadas = canchas.filter((c) => c.activa !== false);
+                if (canchasHabilitadas.length === 0) {
+                  alert('Todas las canchas se encuentran pausadas.');
+                  return;
+                }
                 const firstFreeBlock = bloques[0];
-                const firstCancha = canchas[0];
+                const firstCancha = canchasHabilitadas[0];
                 const targetKey = firstCancha?.id;
                 setModal({
                   bloque: firstFreeBlock,
@@ -749,27 +754,42 @@ export default function AgendaDiaria({ fecha: fechaProp }) {
                   </span>
                 </div>
 
-                {canchas.map((cancha, i) => (
-                  <div
-                    key={cancha.id}
-                    className={`flex-1 min-w-[140px] py-2 px-2 text-center bg-white border-b-4 shadow-sm ${
-                      i < canchas.length - 1 ? 'border-r border-slate-200' : ''
-                    }`}
-                    style={{ 
-                      borderBottomColor: cancha.color_identificador || '#94a3b8',
-                      color: cancha.color_identificador || '#475569' 
-                    }}
-                  >
-                    <div className="flex items-center justify-center gap-1.5 min-w-0">
-                      <span className="font-extrabold tracking-wide text-sm sm:text-base truncate uppercase leading-tight">
-                        {cancha.nombre || 'Cancha'}
-                      </span>
+                {canchas.map((cancha, i) => {
+                  const estaPausada = cancha.activa === false;
+
+                  return (
+                    <div
+                      key={cancha.id}
+                      className={`flex-1 min-w-[140px] py-2 px-2 text-center border-b-4 shadow-sm transition-colors ${
+                        estaPausada ? 'bg-amber-50/70' : 'bg-white'
+                      } ${
+                        i < canchas.length - 1 ? 'border-r border-slate-200' : ''
+                      }`}
+                      style={{ 
+                        borderBottomColor: estaPausada ? '#f59e0b' : (cancha.color_identificador || '#94a3b8'),
+                        color: estaPausada ? '#b45309' : (cancha.color_identificador || '#475569') 
+                      }}
+                    >
+                      <div className="flex items-center justify-center gap-1.5 min-w-0">
+                        <span className="font-extrabold tracking-wide text-sm sm:text-base truncate uppercase leading-tight">
+                          {cancha.nombre || 'Cancha'}
+                        </span>
+                      </div>
+
+                      {estaPausada ? (
+                        <div className="mt-1 flex items-center justify-center">
+                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-amber-100 text-amber-900 border border-amber-300 rounded text-[10px] sm:text-[11px] font-bold tracking-tight">
+                            🔴 Cancha Pausada (Feriado / Mantenimiento)
+                          </span>
+                        </div>
+                      ) : (
+                        <p className="text-[10px] font-medium leading-none mt-1 opacity-70">
+                          {turnosPorCancha[cancha.dbId || cancha.id]?.length || 0} turnos
+                        </p>
+                      )}
                     </div>
-                    <p className="text-[10px] font-medium leading-none mt-1 opacity-70">
-                      {turnosPorCancha[cancha.dbId || cancha.id]?.length || 0} turnos
-                    </p>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
 
               {/* ─── Cuerpo de la Matriz (Filas de horario) ─── */}
@@ -794,6 +814,7 @@ export default function AgendaDiaria({ fecha: fechaProp }) {
                       const turno = turnosCancha.find(
                         (t) => t.hora_inicio?.substring(0, 5) === bloque
                       );
+                      const estaPausada = cancha.activa === false;
 
                       /* ── ¿El bloque vacío ya caducó? (solo hoy) ── */
                       const vencido = !turno && esBloqueVencido(fecha, bloque);
@@ -802,22 +823,25 @@ export default function AgendaDiaria({ fecha: fechaProp }) {
                         <div
                           key={cancha.id}
                           className={`flex-1 min-w-[140px] relative min-h-[36px] sm:min-h-[40px] ${
-                            !turno && !vencido
+                            !turno && !vencido && !estaPausada
                               ? 'group cursor-pointer transition-colors duration-200 hover:bg-slate-50'
                               : ''
                           } ${
-                            vencido
+                            estaPausada
+                              ? 'bg-amber-50/40 border-dashed border-amber-200/80 cursor-not-allowed select-none'
+                              : vencido
                               ? 'bg-slate-50/50 opacity-60 border-dashed border-slate-200 cursor-not-allowed pointer-events-none'
                               : ''
                           } ${
                             i < canchas.length - 1 ? 'border-r border-slate-100' : ''
                           } ${turno ? 'z-10' : 'z-0'}`}
                           onClick={() => {
+                            if (estaPausada) return; // Bloquear creación de turnos en columna pausada
                             if (!turno && !vencido) {
                               setModal({ bloque, cancha, turnos: turnosCancha });
                             }
                           }}
-                          title={vencido ? 'Horario ya pasado' : undefined}
+                          title={estaPausada ? 'Cancha pausada (feriado o mantenimiento)' : vencido ? 'Horario ya pasado' : undefined}
                         >
                           {turno ? (
                             <BloqueOcupado
@@ -825,6 +849,13 @@ export default function AgendaDiaria({ fecha: fechaProp }) {
                               colorHex={cancha.color_identificador}
                               onAbrirCobro={setTurnoParaCobro}
                             />
+                          ) : estaPausada ? (
+                            /* Bloque bloqueado visualmente por pausa */
+                            <div className="absolute inset-0 flex items-center justify-center pointer-events-none select-none">
+                              <span className="text-[10px] font-semibold text-amber-700/60 tracking-tight">
+                                Pausada
+                              </span>
+                            </div>
                           ) : vencido ? (
                             /* Celda bloqueada: estilo ultra limpio sin dibujos */
                             null
