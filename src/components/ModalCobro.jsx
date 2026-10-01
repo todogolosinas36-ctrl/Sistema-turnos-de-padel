@@ -16,7 +16,9 @@ import {
   Banknote,
   Smartphone,
   CreditCard,
+  Coins,
 } from 'lucide-react';
+import { formatearMetodoPagoMixto, calcularTotalesMixtos } from '../utils/paymentHelpers';
 
 const METODOS_PAGO = [
   { id: 'efectivo', label: 'Efectivo', icon: Banknote },
@@ -51,6 +53,11 @@ export default function ModalCobro({ isOpen, onClose, turno, onConfirmarCobro })
   // Sub-modal para seleccionar método de pago de un jugador
   const [jugadorParaCobro, setJugadorParaCobro] = useState(null);
   const [metodoPagoModal, setMetodoPagoModal] = useState('efectivo');
+  const [montosMixtos, setMontosMixtos] = useState({
+    efectivo: '',
+    transferencia: '',
+    tarjeta: '',
+  });
 
   // Inicializar o ajustar jugadores cuando cambia la división
   useEffect(() => {
@@ -91,6 +98,7 @@ export default function ModalCobro({ isOpen, onClose, turno, onConfirmarCobro })
     setDivision(4);
     setJugadorParaCobro(null);
     setMetodoPagoModal('efectivo');
+    setMontosMixtos({ efectivo: '', transferencia: '', tarjeta: '' });
   }, [isOpen, turno?.id, precioBaseCancha]);
 
   // Manejo de atajo Escape para cerrar sub-modales
@@ -250,9 +258,12 @@ export default function ModalCobro({ isOpen, onClose, turno, onConfirmarCobro })
 
   // Cobro individual de un jugador con método de pago seleccionado
   const confirmarCobroJugador = (jugadorId, metodo) => {
+    const metodoAGuardar =
+      metodo === 'mixto' ? formatearMetodoPagoMixto(montosMixtos) : metodo;
+
     setJugadores((prev) => {
       const actualizados = prev.map((jug) =>
-        jug.id === jugadorId ? { ...jug, pagado: true, metodoPago: metodo } : jug
+        jug.id === jugadorId ? { ...jug, pagado: true, metodoPago: metodoAGuardar } : jug
       );
 
       // Si todos quedaron cobrados, liquidamos el turno automáticamente
@@ -588,7 +599,13 @@ export default function ModalCobro({ isOpen, onClose, turno, onConfirmarCobro })
                       disabled={jugador.pagado}
                       onClick={() => {
                         if (!jugador.pagado) {
-                          setMetodoPagoModal(jugador.metodoPago || 'efectivo');
+                          const metodoPrevio = jugador.metodoPago || 'efectivo';
+                          if (metodoPrevio.startsWith('Mixto')) {
+                            setMetodoPagoModal('mixto');
+                          } else {
+                            setMetodoPagoModal(metodoPrevio);
+                          }
+                          setMontosMixtos({ efectivo: '', transferencia: '', tarjeta: '' });
                           setJugadorParaCobro(jugador);
                         }
                       }}
@@ -603,8 +620,15 @@ export default function ModalCobro({ isOpen, onClose, turno, onConfirmarCobro })
                           <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
                           <span>Cobrado ✓</span>
                           {jugador.metodoPago && (
-                            <span className="text-[10px] font-semibold text-emerald-700 ml-0.5 uppercase tracking-wide">
-                              ({jugador.metodoPago === 'transferencia' ? 'Transf' : jugador.metodoPago})
+                            <span
+                              title={jugador.metodoPago}
+                              className="text-[10px] font-semibold text-emerald-700 ml-0.5 uppercase tracking-wide truncate max-w-[120px]"
+                            >
+                              ({jugador.metodoPago.startsWith('Mixto')
+                                ? 'Mixto'
+                                : jugador.metodoPago === 'transferencia'
+                                ? 'Transf'
+                                : jugador.metodoPago})
                             </span>
                           )}
                         </>
@@ -853,114 +877,299 @@ export default function ModalCobro({ isOpen, onClose, turno, onConfirmarCobro })
         )}
 
         {/* ─── SUB-MODAL: MÉTODO DE PAGO PARA COBRAR JUGADOR ─── */}
-        {jugadorParaCobro && (
-          <div
-            className="fixed inset-0 z-[65] flex items-end sm:items-center sm:justify-center bg-slate-900/50 backdrop-blur-xs sm:p-4"
-            onClick={(e) => e.target === e.currentTarget && setJugadorParaCobro(null)}
-          >
-            <div className="bg-white rounded-t-3xl sm:rounded-2xl shadow-2xl w-full sm:max-w-sm overflow-hidden animate-in fade-in slide-in-from-bottom sm:zoom-in-95 duration-150 border border-slate-200">
-              {/* Header */}
-              <div className="p-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between gap-3 shrink-0">
-                <div className="flex items-center gap-2 min-w-0">
-                  <div className="w-7 h-7 rounded-lg bg-punto-brand/10 text-punto-brand flex items-center justify-center font-bold shrink-0">
-                    <DollarSign className="w-4 h-4" />
-                  </div>
-                  <div className="min-w-0">
-                    <h3 className="font-black text-sm text-slate-900 truncate">
-                      Cobrar {jugadorParaCobro.nombre}
-                    </h3>
-                    <span className="text-[10px] font-semibold text-slate-400 block truncate">
-                      Seleccioná el método de pago
-                    </span>
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setJugadorParaCobro(null)}
-                  aria-label="Cerrar"
-                  className="w-8 h-8 rounded-lg bg-slate-200 text-slate-600 flex items-center justify-center hover:bg-slate-300 transition-colors cursor-pointer shrink-0"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
+        {jugadorParaCobro && (() => {
+          const subtotalKiosco = jugadorParaCobro.itemsKiosco.reduce(
+            (sum, it) => sum + it.precio * (it.cantidad || 1),
+            0
+          );
+          const totalJugador = cuotaCanchaPorJugador + subtotalKiosco;
+          const { suma, restante, esExacto, esExcedido } = calcularTotalesMixtos(
+            totalJugador,
+            montosMixtos
+          );
 
-              {/* Body */}
-              <div className="p-5 space-y-4">
-                {/* Monto a cobrar */}
-                {(() => {
-                  const subtotalKiosco = jugadorParaCobro.itemsKiosco.reduce(
-                    (sum, it) => sum + it.precio * (it.cantidad || 1),
-                    0
-                  );
-                  const totalJugador = cuotaCanchaPorJugador + subtotalKiosco;
+          const puedeConfirmar =
+            metodoPagoModal === 'mixto' ? esExacto : totalJugador >= 0;
 
-                  return (
-                    <div className="bg-slate-50 border border-slate-200/80 rounded-2xl p-4 text-center">
-                      <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block mb-1">
-                        Total a cobrar
-                      </span>
-                      <span className="text-3xl font-black text-slate-900 tracking-tight tabular-nums block">
-                        {formatearPrecio(totalJugador)}
-                      </span>
-                      {subtotalKiosco > 0 && (
-                        <p className="text-[11px] text-slate-400 font-medium mt-1">
-                          Cancha {formatearPrecio(cuotaCanchaPorJugador)} + Extras {formatearPrecio(subtotalKiosco)}
-                        </p>
-                      )}
+          return (
+            <div
+              className="fixed inset-0 z-[65] flex items-end sm:items-center sm:justify-center bg-slate-900/50 backdrop-blur-xs sm:p-4"
+              onClick={(e) => e.target === e.currentTarget && setJugadorParaCobro(null)}
+            >
+              <div className="bg-white rounded-t-3xl sm:rounded-2xl shadow-2xl w-full sm:max-w-md overflow-hidden animate-in fade-in slide-in-from-bottom sm:zoom-in-95 duration-150 border border-slate-200 max-h-[92dvh] flex flex-col">
+                {/* Header */}
+                <div className="p-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between gap-3 shrink-0">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <div className="w-8 h-8 rounded-xl bg-punto-brand/10 text-punto-brand flex items-center justify-center font-bold shrink-0">
+                      <DollarSign className="w-4 h-4" />
                     </div>
-                  );
-                })()}
-
-                {/* Métodos de Pago */}
-                <div>
-                  <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-2">
-                    Método de Pago
-                  </label>
-                  <div className="grid grid-cols-3 gap-2">
-                    {METODOS_PAGO.map((metodo) => {
-                      const Icono = metodo.icon;
-                      const seleccionado = metodoPagoModal === metodo.id;
-                      return (
-                        <button
-                          key={metodo.id}
-                          type="button"
-                          onClick={() => setMetodoPagoModal(metodo.id)}
-                          className={`py-3 px-2 rounded-xl text-xs font-bold flex flex-col items-center gap-1.5 transition-all cursor-pointer ${
-                            seleccionado
-                              ? 'bg-slate-900 text-white shadow-sm ring-2 ring-slate-900/20'
-                              : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
-                          }`}
-                        >
-                          <Icono className={`w-4 h-4 ${seleccionado ? 'text-white' : 'text-slate-500'}`} />
-                          <span className="truncate">{metodo.label}</span>
-                        </button>
-                      );
-                    })}
+                    <div className="min-w-0">
+                      <h3 className="font-black text-sm text-slate-900 truncate">
+                        Cobrar a {jugadorParaCobro.nombre}
+                      </h3>
+                      <span className="text-[10px] font-semibold text-slate-400 block truncate">
+                        Seleccioná pago total o combiná métodos (Pago Mixto)
+                      </span>
+                    </div>
                   </div>
-                </div>
-
-                {/* Botón Confirmar */}
-                <div className="pt-2 flex flex-col gap-2">
                   <button
                     type="button"
+                    onClick={() => setJugadorParaCobro(null)}
+                    aria-label="Cerrar"
+                    className="w-8 h-8 rounded-lg bg-slate-200 text-slate-600 flex items-center justify-center hover:bg-slate-300 transition-colors cursor-pointer shrink-0"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+
+                {/* Body con Scroll */}
+                <div className="p-4 sm:p-5 space-y-4 overflow-y-auto overscroll-contain-smooth flex-1">
+                  {/* Total a Pagar destacado en la parte superior */}
+                  <div className="bg-blue-50/70 border border-blue-100 rounded-2xl p-4 text-center">
+                    <span className="text-[10px] sm:text-[11px] font-bold text-blue-700 uppercase tracking-wider block mb-1">
+                      Total a Pagar
+                    </span>
+                    <span className="text-3xl sm:text-4xl font-black text-slate-900 tracking-tight tabular-nums block">
+                      {formatearPrecio(totalJugador)}
+                    </span>
+                    {subtotalKiosco > 0 && (
+                      <p className="text-[11px] text-slate-500 font-medium mt-1">
+                        Cancha {formatearPrecio(cuotaCanchaPorJugador)} + Extras {formatearPrecio(subtotalKiosco)}
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Selector: Botones rápidos + Botón Pago Mixto */}
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-2">
+                      Método de Pago
+                    </label>
+                    <div className="grid grid-cols-4 gap-1.5 sm:gap-2">
+                      {METODOS_PAGO.map((metodo) => {
+                        const Icono = metodo.icon;
+                        const seleccionado = metodoPagoModal === metodo.id;
+                        return (
+                          <button
+                            key={metodo.id}
+                            type="button"
+                            onClick={() => setMetodoPagoModal(metodo.id)}
+                            className={`py-3 px-1 sm:px-2 rounded-xl text-xs font-bold flex flex-col items-center gap-1.5 transition-all cursor-pointer ${
+                              seleccionado
+                                ? 'bg-slate-900 text-white shadow-sm ring-2 ring-slate-900/20'
+                                : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
+                            }`}
+                          >
+                            <Icono className={`w-4 h-4 shrink-0 ${seleccionado ? 'text-white' : 'text-slate-500'}`} />
+                            <span className="truncate text-[11px]">{metodo.label}</span>
+                          </button>
+                        );
+                      })}
+
+                      {/* Opción Pago Mixto */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setMetodoPagoModal('mixto');
+                        }}
+                        className={`py-3 px-1 sm:px-2 rounded-xl text-xs font-bold flex flex-col items-center gap-1.5 transition-all cursor-pointer ${
+                          metodoPagoModal === 'mixto'
+                            ? 'bg-purple-900 text-white shadow-sm ring-2 ring-purple-600/30'
+                            : 'bg-white text-slate-600 border border-slate-200 hover:bg-purple-50/60'
+                        }`}
+                      >
+                        <Coins className={`w-4 h-4 shrink-0 ${metodoPagoModal === 'mixto' ? 'text-amber-300' : 'text-purple-600'}`} />
+                        <span className="truncate text-[11px]">Pago Mixto</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Interfaz de montos al entrar en Pago Mixto */}
+                  {metodoPagoModal === 'mixto' && (
+                    <div className="space-y-3 pt-1 border-t border-dashed border-slate-200 animate-in fade-in duration-150">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[11px] font-bold text-slate-600 uppercase tracking-wider">
+                          Montos por método
+                        </span>
+                        <span className="text-xs font-bold text-slate-500 tabular-nums">
+                          Suma: {formatearPrecio(suma)}
+                        </span>
+                      </div>
+
+                      {/* Inputs numéricos */}
+                      <div className="space-y-2">
+                        {/* Efectivo */}
+                        <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 focus-within:border-slate-800 focus-within:ring-1 focus-within:ring-slate-800 transition-all">
+                          <Banknote className="w-4 h-4 text-emerald-600 shrink-0" />
+                          <label className="text-xs font-bold text-slate-700 w-24 shrink-0">
+                            Efectivo
+                          </label>
+                          <div className="flex-1 flex items-center justify-end gap-1">
+                            <span className="text-slate-400 text-sm font-semibold">$</span>
+                            <input
+                              type="number"
+                              inputMode="numeric"
+                              min="0"
+                              placeholder="0"
+                              value={montosMixtos.efectivo}
+                              onWheel={(e) => e.target.blur()}
+                              onChange={(e) =>
+                                setMontosMixtos((prev) => ({ ...prev, efectivo: e.target.value }))
+                              }
+                              className="w-full text-right bg-transparent text-sm sm:text-base font-bold text-slate-900 focus:outline-none tabular-nums appearance-none [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none [-moz-appearance:_textfield]"
+                            />
+                          </div>
+                          {restante > 0 && Number(montosMixtos.efectivo || 0) === 0 && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const faltante = totalJugador - (Number(montosMixtos.transferencia) || 0) - (Number(montosMixtos.tarjeta) || 0);
+                                if (faltante > 0) setMontosMixtos((prev) => ({ ...prev, efectivo: String(faltante) }));
+                              }}
+                              className="text-[10px] font-bold bg-slate-200 hover:bg-slate-300 text-slate-700 px-1.5 py-0.5 rounded cursor-pointer shrink-0 transition-colors"
+                              title="Cubrir restante con Efectivo"
+                            >
+                              Resto
+                            </button>
+                          )}
+                        </div>
+
+                        {/* Transferencia / MP */}
+                        <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 focus-within:border-slate-800 focus-within:ring-1 focus-within:ring-slate-800 transition-all">
+                          <Smartphone className="w-4 h-4 text-blue-600 shrink-0" />
+                          <label className="text-xs font-bold text-slate-700 w-24 shrink-0">
+                            Transf / MP
+                          </label>
+                          <div className="flex-1 flex items-center justify-end gap-1">
+                            <span className="text-slate-400 text-sm font-semibold">$</span>
+                            <input
+                              type="number"
+                              inputMode="numeric"
+                              min="0"
+                              placeholder="0"
+                              value={montosMixtos.transferencia}
+                              onWheel={(e) => e.target.blur()}
+                              onChange={(e) =>
+                                setMontosMixtos((prev) => ({ ...prev, transferencia: e.target.value }))
+                              }
+                              className="w-full text-right bg-transparent text-sm sm:text-base font-bold text-slate-900 focus:outline-none tabular-nums appearance-none [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none [-moz-appearance:_textfield]"
+                            />
+                          </div>
+                          {restante > 0 && Number(montosMixtos.transferencia || 0) === 0 && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const faltante = totalJugador - (Number(montosMixtos.efectivo) || 0) - (Number(montosMixtos.tarjeta) || 0);
+                                if (faltante > 0) setMontosMixtos((prev) => ({ ...prev, transferencia: String(faltante) }));
+                              }}
+                              className="text-[10px] font-bold bg-slate-200 hover:bg-slate-300 text-slate-700 px-1.5 py-0.5 rounded cursor-pointer shrink-0 transition-colors"
+                              title="Cubrir restante con Transferencia"
+                            >
+                              Resto
+                            </button>
+                          )}
+                        </div>
+
+                        {/* Tarjeta */}
+                        <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 focus-within:border-slate-800 focus-within:ring-1 focus-within:ring-slate-800 transition-all">
+                          <CreditCard className="w-4 h-4 text-violet-600 shrink-0" />
+                          <label className="text-xs font-bold text-slate-700 w-24 shrink-0">
+                            Tarjeta
+                          </label>
+                          <div className="flex-1 flex items-center justify-end gap-1">
+                            <span className="text-slate-400 text-sm font-semibold">$</span>
+                            <input
+                              type="number"
+                              inputMode="numeric"
+                              min="0"
+                              placeholder="0"
+                              value={montosMixtos.tarjeta}
+                              onWheel={(e) => e.target.blur()}
+                              onChange={(e) =>
+                                setMontosMixtos((prev) => ({ ...prev, tarjeta: e.target.value }))
+                              }
+                              className="w-full text-right bg-transparent text-sm sm:text-base font-bold text-slate-900 focus:outline-none tabular-nums appearance-none [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none [-moz-appearance:_textfield]"
+                            />
+                          </div>
+                          {restante > 0 && Number(montosMixtos.tarjeta || 0) === 0 && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const faltante = totalJugador - (Number(montosMixtos.efectivo) || 0) - (Number(montosMixtos.transferencia) || 0);
+                                if (faltante > 0) setMontosMixtos((prev) => ({ ...prev, tarjeta: String(faltante) }));
+                              }}
+                              className="text-[10px] font-bold bg-slate-200 hover:bg-slate-300 text-slate-700 px-1.5 py-0.5 rounded cursor-pointer shrink-0 transition-colors"
+                              title="Cubrir restante con Tarjeta"
+                            >
+                              Resto
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* ─── Validación matemática en tiempo real ─── */}
+                      <div
+                        className={`rounded-xl p-3 border text-xs font-bold flex items-center justify-between transition-colors ${
+                          esExacto
+                            ? 'bg-emerald-50 border-emerald-300 text-emerald-800'
+                            : esExcedido
+                            ? 'bg-amber-50 border-amber-300 text-amber-800'
+                            : 'bg-red-50 border-red-300 text-red-700'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          {esExacto ? (
+                            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                          ) : (
+                            <AlertTriangle className="w-4 h-4 shrink-0" />
+                          )}
+                          <span>
+                            {esExacto
+                              ? '¡Monto exacto cubierto! (Restante: $0)'
+                              : esExcedido
+                              ? `Monto excedido por: ${formatearPrecio(Math.abs(restante))}`
+                              : `Restante a cubrir: ${formatearPrecio(restante)}`}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Footer con Botón Confirmar */}
+                <div className="p-4 sm:p-5 bg-slate-50 border-t border-slate-200 flex flex-col gap-2 shrink-0">
+                  <button
+                    type="button"
+                    disabled={!puedeConfirmar}
                     onClick={() => confirmarCobroJugador(jugadorParaCobro.id, metodoPagoModal)}
-                    className="w-full py-3.5 rounded-xl bg-punto-brand hover:bg-punto-hover active:scale-[0.98] text-white text-xs sm:text-sm font-black shadow-md flex items-center justify-center gap-2 transition-all cursor-pointer"
+                    className={`w-full py-3.5 rounded-xl text-xs sm:text-sm font-black shadow-md flex items-center justify-center gap-2 transition-all ${
+                      !puedeConfirmar
+                        ? 'bg-slate-300 text-slate-500 cursor-not-allowed opacity-60 shadow-none pointer-events-none'
+                        : metodoPagoModal === 'mixto'
+                        ? 'bg-emerald-600 hover:bg-emerald-700 text-white active:scale-[0.98] cursor-pointer'
+                        : 'bg-punto-brand hover:bg-punto-hover text-white active:scale-[0.98] cursor-pointer'
+                    }`}
                   >
                     <CheckCircle2 className="w-4 h-4 shrink-0" />
-                    <span>Confirmar Cobro</span>
+                    <span>
+                      {metodoPagoModal === 'mixto'
+                        ? esExacto
+                          ? 'Confirmar Pago Mixto'
+                          : `Restante a cubrir: ${formatearPrecio(Math.max(0, restante))}`
+                        : 'Confirmar Cobro'}
+                    </span>
                   </button>
                   <button
                     type="button"
                     onClick={() => setJugadorParaCobro(null)}
-                    className="w-full py-2 text-xs font-bold text-slate-500 hover:text-slate-800 transition-colors text-center cursor-pointer"
+                    className="w-full py-1.5 text-xs font-bold text-slate-500 hover:text-slate-800 transition-colors text-center cursor-pointer"
                   >
                     Cancelar
                   </button>
                 </div>
               </div>
             </div>
-          </div>
-        )}
+          );
+        })()}
 
       </div>
     </div>

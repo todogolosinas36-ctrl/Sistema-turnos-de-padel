@@ -17,7 +17,9 @@ import {
   ArrowRight,
   X,
   AlertTriangle,
+  Coins,
 } from 'lucide-react';
+import { formatearMetodoPagoMixto, calcularTotalesMixtos } from '../../utils/paymentHelpers';
 
 const METODOS_PAGO = [
   { id: 'efectivo', label: 'Efectivo', icon: Banknote },
@@ -35,6 +37,11 @@ export default function Cantina() {
   const [categoriaSeleccionada, setCategoriaSeleccionada] = useState('Todos');
   const [ticket, setTicket] = useState([]);
   const [metodoPago, setMetodoPago] = useState('efectivo');
+  const [montosMixtos, setMontosMixtos] = useState({
+    efectivo: '',
+    transferencia: '',
+    tarjeta: '',
+  });
   const [modalCobroAbierto, setModalCobroAbierto] = useState(false);
   const [cobrando, setCobrando] = useState(false);
   const [ultimoCobro, setUltimoCobro] = useState(null);
@@ -139,6 +146,9 @@ export default function Cantina() {
     const ticketCode = `TCK-${Date.now().toString().slice(-6)}`;
 
     try {
+      const metodoFinal =
+        metodoPago === 'mixto' ? formatearMetodoPagoMixto(montosMixtos) : metodoPago;
+
       // 1. Insertar venta principal en ventas_cantina
       const { data: venta, error: errVenta } = await supabase
         .from('ventas_cantina')
@@ -146,7 +156,7 @@ export default function Cantina() {
           {
             fecha: hoyISO(),
             hora,
-            metodo_pago: metodoPago,
+            metodo_pago: metodoFinal,
             total: Math.round(Number(total)),
             cantidad_items: Number(cantidadItems),
             ticket: ticketCode,
@@ -183,12 +193,13 @@ export default function Cantina() {
       setUltimoCobro({
         total,
         cantidadItems,
-        metodoPago,
+        metodoPago: metodoFinal,
         ticket: ticketCode,
         timestamp: hora,
       });
       setTicket([]);
       setModalCobroAbierto(false);
+      setMontosMixtos({ efectivo: '', transferencia: '', tarjeta: '' });
       setTimeout(() => setUltimoCobro(null), 5000);
     } catch (err) {
       console.error('[Cantina] No se pudo registrar la venta:', err);
@@ -198,7 +209,7 @@ export default function Cantina() {
     } finally {
       setCobrando(false);
     }
-  }, [ticket, cobrando, metodoPago, total, cantidadItems, ajustarStock]);
+  }, [ticket, cobrando, metodoPago, montosMixtos, total, cantidadItems, ajustarStock]);
 
   /* ─── Atajos de teclado para velocidad de mostrador ─── */
   useEffect(() => {
@@ -539,7 +550,11 @@ export default function Cantina() {
             <button
               type="button"
               disabled={ticket.length === 0}
-              onClick={() => setModalCobroAbierto(true)}
+              onClick={() => {
+                setMetodoPago('efectivo');
+                setMontosMixtos({ efectivo: '', transferencia: '', tarjeta: '' });
+                setModalCobroAbierto(true);
+              }}
               className={`w-full bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-black text-base sm:text-lg py-4 rounded-xl shadow-md mt-4 flex justify-between items-center gap-2 px-4 sm:px-6 transition-all ${
                 ticket.length === 0
                   ? 'opacity-50 cursor-not-allowed shadow-none'
@@ -553,115 +568,298 @@ export default function Cantina() {
         </div>
       </div>
 
-      {/* ═══ Modal de Cobro ═══ */}
-      {modalCobroAbierto && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-zinc-950/60 backdrop-blur-xs animate-in fade-in duration-150"
-          onClick={() => !cobrando && setModalCobroAbierto(false)}
-        >
+      {/* ═══ Modal de Cobro con Pago Mixto ═══ */}
+      {modalCobroAbierto && (() => {
+        const { suma, restante, esExacto, esExcedido } = calcularTotalesMixtos(
+          total,
+          montosMixtos
+        );
+        const puedeConfirmar =
+          ticket.length > 0 &&
+          !cobrando &&
+          (metodoPago === 'mixto' ? esExacto : total >= 0);
+
+        return (
           <div
-            className="bg-white w-full max-w-md rounded-2xl sm:rounded-3xl shadow-2xl border border-zinc-200 overflow-hidden animate-in zoom-in-95 duration-150 flex flex-col"
-            onClick={(e) => e.stopPropagation()}
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-zinc-950/60 backdrop-blur-xs animate-in fade-in duration-150"
+            onClick={() => !cobrando && setModalCobroAbierto(false)}
           >
-            {/* Header del Modal */}
-            <div className="p-4 sm:p-5 border-b border-zinc-100 flex items-center justify-between bg-zinc-50/50">
-              <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center font-bold">
-                  <Receipt className="w-4 h-4" />
+            <div
+              className="bg-white w-full max-w-md rounded-2xl sm:rounded-3xl shadow-2xl border border-zinc-200 overflow-hidden animate-in zoom-in-95 duration-150 flex flex-col max-h-[92dvh]"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Header del Modal */}
+              <div className="p-4 sm:p-5 border-b border-zinc-100 flex items-center justify-between bg-zinc-50/50 shrink-0">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center font-bold">
+                    <Receipt className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h3 className="font-black text-slate-900 text-base leading-none">Confirmar Cobro</h3>
+                    <span className="text-[11px] text-slate-400 font-semibold">{cantidadItems} artículos en el ticket</span>
+                  </div>
                 </div>
+                <button
+                  type="button"
+                  onClick={() => !cobrando && setModalCobroAbierto(false)}
+                  disabled={cobrando}
+                  className="w-8 h-8 rounded-lg hover:bg-zinc-100 text-slate-400 hover:text-slate-700 flex items-center justify-center transition-colors cursor-pointer disabled:opacity-50"
+                  aria-label="Cerrar modal"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* Contenido del Modal con Scroll */}
+              <div className="p-4 sm:p-6 space-y-4 overflow-y-auto overscroll-contain-smooth flex-1">
+                {/* Total a pagar destacado */}
+                <div className="bg-blue-50/60 border border-blue-100 rounded-2xl p-4 sm:p-5 text-center">
+                  <span className="text-xs font-bold text-blue-700 uppercase tracking-wider block mb-1">
+                    Total a pagar
+                  </span>
+                  <span className="text-3xl sm:text-4xl font-black text-slate-900 tracking-tight tabular-nums block">
+                    {formatearPrecio(total)}
+                  </span>
+                </div>
+
+                {/* Selector de Método de Pago + Pago Mixto */}
                 <div>
-                  <h3 className="font-black text-slate-900 text-base leading-none">Confirmar Cobro</h3>
-                  <span className="text-[11px] text-slate-400 font-semibold">{cantidadItems} artículos en el ticket</span>
+                  <label className="text-xs font-bold text-slate-700 uppercase tracking-wider block mb-2.5">
+                    Método de pago
+                  </label>
+                  <div className="grid grid-cols-4 gap-1.5 sm:gap-2">
+                    {METODOS_PAGO.map((metodo) => {
+                      const Icono = metodo.icon;
+                      const seleccionado = metodoPago === metodo.id;
+                      return (
+                        <button
+                          key={metodo.id}
+                          type="button"
+                          onClick={() => setMetodoPago(metodo.id)}
+                          className={`py-3 px-1 sm:px-2 rounded-xl text-xs font-bold flex flex-col items-center gap-1.5 transition-all cursor-pointer ${
+                            seleccionado
+                              ? 'bg-slate-900 text-white shadow-md ring-2 ring-slate-900/20'
+                              : 'bg-white text-slate-600 border border-zinc-200 hover:bg-zinc-50 hover:border-zinc-300'
+                          }`}
+                        >
+                          <Icono className={`w-4 h-4 ${seleccionado ? 'text-white' : 'text-slate-500'}`} />
+                          <span className="truncate text-[11px]">{metodo.label}</span>
+                        </button>
+                      );
+                    })}
+
+                    {/* Botón Pago Mixto */}
+                    <button
+                      type="button"
+                      onClick={() => setMetodoPago('mixto')}
+                      className={`py-3 px-1 sm:px-2 rounded-xl text-xs font-bold flex flex-col items-center gap-1.5 transition-all cursor-pointer ${
+                        metodoPago === 'mixto'
+                          ? 'bg-purple-900 text-white shadow-md ring-2 ring-purple-600/30'
+                          : 'bg-white text-slate-600 border border-zinc-200 hover:bg-purple-50/60'
+                      }`}
+                    >
+                      <Coins className={`w-4 h-4 ${metodoPago === 'mixto' ? 'text-amber-300' : 'text-purple-600'}`} />
+                      <span className="truncate text-[11px]">Pago Mixto</span>
+                    </button>
+                  </div>
                 </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => !cobrando && setModalCobroAbierto(false)}
-                disabled={cobrando}
-                className="w-8 h-8 rounded-lg hover:bg-zinc-100 text-slate-400 hover:text-slate-700 flex items-center justify-center transition-colors cursor-pointer disabled:opacity-50"
-                aria-label="Cerrar modal"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
 
-            {/* Contenido del Modal */}
-            <div className="p-5 sm:p-6 space-y-5">
-              {/* Total a pagar */}
-              <div className="bg-blue-50/60 border border-blue-100 rounded-2xl p-4 sm:p-5 text-center">
-                <span className="text-xs font-bold text-blue-700 uppercase tracking-wider block mb-1">
-                  Total a pagar
-                </span>
-                <span className="text-3xl sm:text-4xl font-black text-slate-900 tracking-tight tabular-nums block">
-                  {formatearPrecio(total)}
-                </span>
-              </div>
+                {/* Interfaz de montos al entrar en Pago Mixto */}
+                {metodoPago === 'mixto' && (
+                  <div className="space-y-3 pt-2 border-t border-dashed border-zinc-200 animate-in fade-in duration-150">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] font-bold text-slate-600 uppercase tracking-wider">
+                        Desglose de montos
+                      </span>
+                      <span className="text-xs font-bold text-slate-500 tabular-nums">
+                        Suma: {formatearPrecio(suma)}
+                      </span>
+                    </div>
 
-              {/* Selector de Método de Pago */}
-              <div>
-                <label className="text-xs font-bold text-slate-700 uppercase tracking-wider block mb-2.5">
-                  Método de pago
-                </label>
-                <div className="grid grid-cols-3 gap-2.5">
-                  {METODOS_PAGO.map((metodo) => {
-                    const Icono = metodo.icon;
-                    const seleccionado = metodoPago === metodo.id;
-                    return (
-                      <button
-                        key={metodo.id}
-                        type="button"
-                        onClick={() => setMetodoPago(metodo.id)}
-                        className={`py-3 px-2 rounded-xl text-xs font-bold flex flex-col items-center gap-1.5 transition-all cursor-pointer ${
-                          seleccionado
-                            ? 'bg-slate-900 text-white shadow-md ring-2 ring-slate-900/20'
-                            : 'bg-white text-slate-600 border border-zinc-200 hover:bg-zinc-50 hover:border-zinc-300'
-                        }`}
-                      >
-                        <Icono className={`w-4 h-4 ${seleccionado ? 'text-white' : 'text-slate-500'}`} />
-                        <span className="truncate">{metodo.label}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            </div>
+                    <div className="space-y-2">
+                      {/* Efectivo */}
+                      <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 focus-within:border-slate-800 focus-within:ring-1 focus-within:ring-slate-800 transition-all">
+                        <Banknote className="w-4 h-4 text-emerald-600 shrink-0" />
+                        <label className="text-xs font-bold text-slate-700 w-24 shrink-0">
+                          Efectivo
+                        </label>
+                        <div className="flex-1 flex items-center justify-end gap-1">
+                          <span className="text-slate-400 text-sm font-semibold">$</span>
+                          <input
+                            type="number"
+                            inputMode="numeric"
+                            min="0"
+                            placeholder="0"
+                            value={montosMixtos.efectivo}
+                            onWheel={(e) => e.target.blur()}
+                            onChange={(e) =>
+                              setMontosMixtos((prev) => ({ ...prev, efectivo: e.target.value }))
+                            }
+                            className="w-full text-right bg-transparent text-sm sm:text-base font-bold text-slate-900 focus:outline-none tabular-nums appearance-none [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none [-moz-appearance:_textfield]"
+                          />
+                        </div>
+                        {restante > 0 && Number(montosMixtos.efectivo || 0) === 0 && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const faltante = total - (Number(montosMixtos.transferencia) || 0) - (Number(montosMixtos.tarjeta) || 0);
+                              if (faltante > 0) setMontosMixtos((prev) => ({ ...prev, efectivo: String(faltante) }));
+                            }}
+                            className="text-[10px] font-bold bg-slate-200 hover:bg-slate-300 text-slate-700 px-1.5 py-0.5 rounded cursor-pointer shrink-0 transition-colors"
+                            title="Cubrir restante con Efectivo"
+                          >
+                            Resto
+                          </button>
+                        )}
+                      </div>
 
-            {/* Footer con Botón Confirmar Pago */}
-            <div className="p-5 sm:p-6 bg-zinc-50 border-t border-zinc-100 flex flex-col gap-2">
-              <button
-                type="button"
-                disabled={ticket.length === 0 || cobrando}
-                onClick={confirmarPago}
-                className={`w-full bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-black text-base sm:text-lg py-3.5 sm:py-4 rounded-xl shadow-md flex justify-center items-center gap-2 transition-all ${
-                  ticket.length === 0 || cobrando
-                    ? 'opacity-50 cursor-not-allowed shadow-none'
-                    : 'hover:shadow-lg active:scale-[0.99] cursor-pointer'
-                }`}
-              >
-                {cobrando ? (
-                  <>
-                    <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                    <span>Registrando venta…</span>
-                  </>
-                ) : (
-                  <>
-                    <CheckCircle2 className="w-5 h-5 shrink-0" />
-                    <span>Confirmar Pago</span>
-                  </>
+                      {/* Transf / MP */}
+                      <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 focus-within:border-slate-800 focus-within:ring-1 focus-within:ring-slate-800 transition-all">
+                        <Smartphone className="w-4 h-4 text-blue-600 shrink-0" />
+                        <label className="text-xs font-bold text-slate-700 w-24 shrink-0">
+                          Transf / MP
+                        </label>
+                        <div className="flex-1 flex items-center justify-end gap-1">
+                          <span className="text-slate-400 text-sm font-semibold">$</span>
+                          <input
+                            type="number"
+                            inputMode="numeric"
+                            min="0"
+                            placeholder="0"
+                            value={montosMixtos.transferencia}
+                            onWheel={(e) => e.target.blur()}
+                            onChange={(e) =>
+                              setMontosMixtos((prev) => ({ ...prev, transferencia: e.target.value }))
+                            }
+                            className="w-full text-right bg-transparent text-sm sm:text-base font-bold text-slate-900 focus:outline-none tabular-nums appearance-none [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none [-moz-appearance:_textfield]"
+                          />
+                        </div>
+                        {restante > 0 && Number(montosMixtos.transferencia || 0) === 0 && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const faltante = total - (Number(montosMixtos.efectivo) || 0) - (Number(montosMixtos.tarjeta) || 0);
+                              if (faltante > 0) setMontosMixtos((prev) => ({ ...prev, transferencia: String(faltante) }));
+                            }}
+                            className="text-[10px] font-bold bg-slate-200 hover:bg-slate-300 text-slate-700 px-1.5 py-0.5 rounded cursor-pointer shrink-0 transition-colors"
+                            title="Cubrir restante con Transferencia"
+                          >
+                            Resto
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Tarjeta */}
+                      <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 focus-within:border-slate-800 focus-within:ring-1 focus-within:ring-slate-800 transition-all">
+                        <CreditCard className="w-4 h-4 text-violet-600 shrink-0" />
+                        <label className="text-xs font-bold text-slate-700 w-24 shrink-0">
+                          Tarjeta
+                        </label>
+                        <div className="flex-1 flex items-center justify-end gap-1">
+                          <span className="text-slate-400 text-sm font-semibold">$</span>
+                          <input
+                            type="number"
+                            inputMode="numeric"
+                            min="0"
+                            placeholder="0"
+                            value={montosMixtos.tarjeta}
+                            onWheel={(e) => e.target.blur()}
+                            onChange={(e) =>
+                              setMontosMixtos((prev) => ({ ...prev, tarjeta: e.target.value }))
+                            }
+                            className="w-full text-right bg-transparent text-sm sm:text-base font-bold text-slate-900 focus:outline-none tabular-nums appearance-none [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none [-moz-appearance:_textfield]"
+                          />
+                        </div>
+                        {restante > 0 && Number(montosMixtos.tarjeta || 0) === 0 && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const faltante = total - (Number(montosMixtos.efectivo) || 0) - (Number(montosMixtos.transferencia) || 0);
+                              if (faltante > 0) setMontosMixtos((prev) => ({ ...prev, tarjeta: String(faltante) }));
+                            }}
+                            className="text-[10px] font-bold bg-slate-200 hover:bg-slate-300 text-slate-700 px-1.5 py-0.5 rounded cursor-pointer shrink-0 transition-colors"
+                            title="Cubrir restante con Tarjeta"
+                          >
+                            Resto
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Validación matemática en tiempo real */}
+                    <div
+                      className={`rounded-xl p-3 border text-xs font-bold flex items-center justify-between transition-colors ${
+                        esExacto
+                          ? 'bg-emerald-50 border-emerald-300 text-emerald-800'
+                          : esExcedido
+                          ? 'bg-amber-50 border-amber-300 text-amber-800'
+                          : 'bg-red-50 border-red-300 text-red-700'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2">
+                        {esExacto ? (
+                          <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                        ) : (
+                          <AlertTriangle className="w-4 h-4 shrink-0" />
+                        )}
+                        <span>
+                          {esExacto
+                            ? '¡Monto exacto cubierto! (Restante: $0)'
+                            : esExcedido
+                            ? `Monto excedido por: ${formatearPrecio(Math.abs(restante))}`
+                            : `Restante a cubrir: ${formatearPrecio(restante)}`}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
                 )}
-              </button>
-              <button
-                type="button"
-                onClick={() => setModalCobroAbierto(false)}
-                disabled={cobrando}
-                className="w-full py-2.5 text-xs font-bold text-slate-500 hover:text-slate-800 transition-colors text-center cursor-pointer disabled:opacity-50"
-              >
-                Volver al ticket
-              </button>
+              </div>
+
+              {/* Footer con Botón Confirmar Pago */}
+              <div className="p-4 sm:p-6 bg-zinc-50 border-t border-zinc-100 flex flex-col gap-2 shrink-0">
+                <button
+                  type="button"
+                  disabled={!puedeConfirmar}
+                  onClick={confirmarPago}
+                  className={`w-full font-black text-base sm:text-lg py-3.5 sm:py-4 rounded-xl shadow-md flex justify-center items-center gap-2 transition-all ${
+                    !puedeConfirmar
+                      ? 'bg-slate-300 text-slate-500 opacity-50 cursor-not-allowed shadow-none pointer-events-none'
+                      : metodoPago === 'mixto'
+                      ? 'bg-emerald-600 hover:bg-emerald-700 text-white hover:shadow-lg active:scale-[0.99] cursor-pointer'
+                      : 'bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white hover:shadow-lg active:scale-[0.99] cursor-pointer'
+                  }`}
+                >
+                  {cobrando ? (
+                    <>
+                      <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                      <span>Registrando venta…</span>
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle2 className="w-5 h-5 shrink-0" />
+                      <span>
+                        {metodoPago === 'mixto'
+                          ? esExacto
+                            ? 'Confirmar Pago Mixto'
+                            : `Restante a cubrir: ${formatearPrecio(Math.max(0, restante))}`
+                          : 'Confirmar Pago'}
+                      </span>
+                    </>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setModalCobroAbierto(false)}
+                  disabled={cobrando}
+                  className="w-full py-2.5 text-xs font-bold text-slate-500 hover:text-slate-800 transition-colors text-center cursor-pointer disabled:opacity-50"
+                >
+                  Volver al ticket
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
     </div>
   );
 }

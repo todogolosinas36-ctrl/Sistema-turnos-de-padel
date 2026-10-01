@@ -26,17 +26,17 @@ const grillaDe = (cantCanchas) => {
 /* ─── Estilos por estado del turno ─── */
 const ESTADO_ESTILOS = {
   confirmado: {
-    bg: 'bg-blue-50',
-    border: 'border-blue-500',
-    text: 'text-blue-900',
-    badge: 'bg-blue-200/60 text-blue-700',
+    bg: 'bg-sky-50/80',
+    border: 'border-l-sky-500',
+    text: 'text-sky-900',
+    badge: 'bg-sky-100 text-sky-700',
     label: 'Confirmado',
   },
   pagado: {
-    bg: 'bg-emerald-50',
-    border: 'border-emerald-500',
+    bg: 'bg-emerald-50/80',
+    border: 'border-l-emerald-500',
     text: 'text-emerald-900',
-    badge: 'bg-emerald-200/60 text-emerald-700',
+    badge: 'bg-emerald-100 text-emerald-700',
     label: 'Pagado ✓',
   },
 };
@@ -213,6 +213,13 @@ function BloqueAcciones({ turno, onCobrar, onCancelar, onClose }) {
   const [cobrando, setCobrando] = useState(false);
   const [cancelando, setCancelando] = useState(false);
 
+  const estaPagado = turno.estado === 'pagado' || Boolean(turno.pagado) || Boolean(turno.cobrado_el);
+
+  const horaInicio = turno.hora_inicio?.substring(0, 5) || '';
+  const horaFin = calcularHoraFin(horaInicio, turno.duracion_minutos || 90);
+  const horarioTexto = horaInicio && horaFin ? `${horaInicio} - ${horaFin} hs` : horaInicio ? `${horaInicio} hs` : '';
+  const nombreCliente = `${turno.cliente_nombre || 'Cliente'} ${turno.cliente_apellido || ''}`.trim();
+
   const handleCobrar = async () => {
     setCobrando(true);
     await onCobrar();
@@ -221,83 +228,105 @@ function BloqueAcciones({ turno, onCobrar, onCancelar, onClose }) {
   };
 
   const handleCancelar = async () => {
-    if (!confirm(`¿Cancelar el turno de ${turno.cliente_nombre} ${turno.cliente_apellido}?`)) return;
+    if (estaPagado) return;
+    if (!confirm(`¿Cancelar el turno de ${nombreCliente}?`)) return;
     setCancelando(true);
     await onCancelar();
     setCancelando(false);
     onClose();
   };
 
-  /* Botones reutilizados por el bottom sheet mobile y el popover desktop */
-  const acciones = (
-    <>
-      {turno.estado !== 'pagado' && (
+  const cabeceraContexto = (
+    <div className="border-b border-gray-100 pb-3 mb-1 px-4 pt-4 text-left">
+      <p className="font-bold text-gray-800 text-sm truncate leading-tight">
+        {nombreCliente}
+      </p>
+      <p className="text-xs text-gray-500 mt-1 tabular-nums flex items-center gap-1.5 flex-wrap">
+        <span>{horarioTexto}</span>
+        {(turno.cancha_nombre || turno.cancha) && (
+          <>
+            <span className="text-gray-300">•</span>
+            <span className="uppercase font-medium text-[11px] text-gray-400">
+              {turno.cancha_nombre || turno.cancha}
+            </span>
+          </>
+        )}
+      </p>
+    </div>
+  );
+
+  const listaBotones = (
+    <div className="flex flex-col py-1">
+      {!estaPagado && (
         <button
           type="button"
           onClick={handleCobrar}
           disabled={cobrando}
-          className="w-full px-4 sm:px-3.5 py-3 sm:py-2 text-left text-sm font-semibold text-emerald-700 hover:bg-emerald-50 active:bg-emerald-100 flex items-center gap-2.5 rounded-lg transition-colors disabled:opacity-50"
+          className="flex items-center gap-3 w-full text-left px-4 py-3 transition-colors text-sm font-medium text-emerald-700 hover:bg-emerald-50 active:bg-emerald-100 cursor-pointer disabled:opacity-50"
         >
-          {cobrando ? <RefreshCw className="w-4 sm:w-3.5 h-4 sm:h-3.5 animate-spin shrink-0" /> : <DollarSign className="w-4 sm:w-3.5 h-4 sm:h-3.5 shrink-0" />}
-          Cobrar Turno
+          {cobrando ? (
+            <RefreshCw className="w-4 h-4 animate-spin shrink-0" />
+          ) : (
+            <DollarSign className="w-4 h-4 shrink-0 text-emerald-600" />
+          )}
+          <span>Cobrar Turno</span>
         </button>
       )}
+
       <button
         type="button"
         onClick={handleCancelar}
-        disabled={cancelando}
-        className="w-full px-4 sm:px-3.5 py-3 sm:py-2 text-left text-sm font-semibold text-red-600 hover:bg-red-50 active:bg-red-100 flex items-center gap-2.5 rounded-lg transition-colors disabled:opacity-50"
+        disabled={estaPagado || cancelando}
+        className={`flex items-center gap-3 w-full text-left px-4 py-3 transition-colors text-sm font-medium ${
+          estaPagado
+            ? 'text-gray-400 cursor-not-allowed opacity-50 pointer-events-none'
+            : 'text-red-600 hover:bg-red-50 active:bg-red-100 cursor-pointer disabled:opacity-50'
+        }`}
       >
-        {cancelando ? <RefreshCw className="w-4 sm:w-3.5 h-4 sm:h-3.5 animate-spin shrink-0" /> : <Trash2 className="w-4 sm:w-3.5 h-4 sm:h-3.5 shrink-0" />}
-        Cancelar Turno
+        {cancelando ? (
+          <RefreshCw className="w-4 h-4 animate-spin shrink-0" />
+        ) : (
+          <Trash2 className="w-4 h-4 shrink-0" />
+        )}
+        <span>{estaPagado ? 'No cancelable (Pagado)' : 'Cancelar Turno'}</span>
       </button>
+
       <button
         type="button"
         onClick={onClose}
-        className="hidden sm:flex w-full px-3.5 py-2 text-left text-sm font-semibold text-slate-500 hover:bg-slate-50 flex items-center gap-2.5 transition-colors"
+        className="flex items-center gap-3 w-full text-left px-4 py-3 transition-colors text-sm font-medium text-gray-700 hover:bg-gray-100 cursor-pointer"
       >
-        <X className="w-3.5 h-3.5" />
-        Cerrar
+        <X className="w-4 h-4 shrink-0 text-gray-400" />
+        <span>Cerrar</span>
       </button>
-    </>
+    </div>
   );
 
   return (
     <div
-      className="fixed inset-0 z-40 flex items-end sm:items-center sm:justify-center bg-zinc-950/40 sm:bg-zinc-950/30 backdrop-blur-[2px] animate-in fade-in duration-150"
+      className="fixed inset-0 z-50 flex items-end sm:items-center sm:justify-center bg-zinc-950/40 sm:bg-zinc-950/30 backdrop-blur-[2px] animate-in fade-in duration-150 p-0 sm:p-4"
       onClick={(e) => { e.stopPropagation(); onClose(); }}
     >
       {/* ─── Mobile: bottom sheet ─── */}
       <div
-        className="sm:hidden w-full bg-white rounded-t-3xl shadow-2xl pt-2 pb-3 pb-[calc(0.75rem+env(safe-area-inset-bottom,0px))] animate-in slide-in-from-bottom duration-200"
+        className="sm:hidden w-full bg-white rounded-t-3xl shadow-2xl border-t border-gray-100 overflow-hidden pb-[calc(1rem+env(safe-area-inset-bottom,0px))] animate-in slide-in-from-bottom duration-200"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex justify-center pb-2 pt-1">
+        <div className="flex justify-center pt-3 pb-1">
           <div className="w-11 h-1.5 bg-slate-200 rounded-full" />
         </div>
-        <p className="px-5 pb-3 text-[11px] font-bold text-slate-400 uppercase tracking-wider truncate">
-          {turno.cliente_nombre} {turno.cliente_apellido} · {turno.hora_inicio?.substring(0, 5)} hs
-        </p>
-        <div className="space-y-1 px-3 pb-3">{acciones}</div>
-        <div className="px-3">
-          <button
-            type="button"
-            onClick={onClose}
-            className="w-full py-3.5 rounded-xl bg-slate-100 text-slate-600 font-bold text-sm flex items-center justify-center gap-2 active:scale-[0.98] transition-transform"
-          >
-            <X className="w-4 h-4" />
-            Cerrar
-          </button>
-        </div>
+        {cabeceraContexto}
+        {listaBotones}
       </div>
 
       {/* ─── Desktop: popover centrado ─── */}
       <div
-        className="hidden sm:block absolute z-50 bg-white rounded-xl shadow-xl border border-slate-200 py-1.5 w-44 animate-in fade-in zoom-in-95 duration-100"
+        className="hidden sm:block absolute z-50 bg-white rounded-xl shadow-xl border border-gray-100 min-w-[220px] max-w-xs overflow-hidden animate-in fade-in zoom-in-95 duration-100"
         style={{ top: '50%', left: '50%', transform: 'translate(-50%, -50%)' }}
         onClick={(e) => e.stopPropagation()}
       >
-        {acciones}
+        {cabeceraContexto}
+        {listaBotones}
       </div>
     </div>
   );
@@ -336,24 +365,33 @@ function BloqueOcupado({ turno, colorHex, onAbrirCobro }) {
   const span = (turno.duracion_minutos || 90) / 30;
   const heightPercent = span * 100;
 
-  /* El color sale de la fila `canchas` de la base, no de adivinar por el
-     nombre ("Roja"/"Verde"), que dejaba de funcionar con una tercera cancha. */
   const esAbono = Boolean(turno.es_fijo);
-  const colorCls = esAbono
-    ? 'bg-amber-50 border-amber-500 text-amber-900 ring-1 ring-amber-400/30'
-    : 'text-stone-900';
+  const esPagado = turno.estado === 'pagado';
 
-  const estiloColor = esAbono
-    ? undefined
-    : {
-        backgroundColor: `${colorHex || '#3f3f46'}1f`,
-        borderLeftColor: colorHex || '#52525b',
+  let tarjetaCls = '';
+  let estiloColor = undefined;
+
+  if (esAbono) {
+    tarjetaCls = 'bg-amber-50/90 border-l-amber-500 border border-amber-200/60 text-amber-950';
+  } else if (esPagado) {
+    tarjetaCls = 'bg-emerald-50/90 border-l-emerald-500 border border-emerald-200/60 text-emerald-950';
+  } else {
+    // Confirmado / Regular
+    if (colorHex) {
+      tarjetaCls = 'border border-slate-200/70 text-slate-900';
+      estiloColor = {
+        backgroundColor: `${colorHex}15`, // Fondo pastel sutil y limpio (~8% de opacidad)
+        borderLeftColor: colorHex,
       };
+    } else {
+      tarjetaCls = 'bg-sky-50/90 border-l-sky-500 border border-sky-200/60 text-sky-950';
+    }
+  }
 
   return (
     <>
       <div
-        className={`absolute left-0 right-0 top-0 m-1 sm:m-1.5 rounded-lg p-1.5 sm:p-3 flex flex-col items-center justify-center text-center border-l-4 shadow-sm transition-all active:scale-[0.98] hover:shadow-md cursor-pointer overflow-hidden z-20 select-none ${colorCls}`}
+        className={`absolute left-0 right-0 top-0 m-1 sm:m-1.5 rounded-xl p-2 sm:p-3 flex flex-col items-center justify-center text-center border-l-4 shadow-sm hover:shadow-md transition-all duration-200 cursor-pointer overflow-hidden z-20 select-none ${tarjetaCls}`}
         style={{ height: `calc(${heightPercent}% - 12px)`, ...estiloColor }}
         onClick={() => {
           if (turno.estado !== 'pagado') {
@@ -363,32 +401,33 @@ function BloqueOcupado({ turno, colorHex, onAbrirCobro }) {
           }
         }}
       >
-        {/* Nombre del cliente */}
-        <p className="text-[11px] sm:text-base font-black uppercase tracking-wide truncate w-full leading-tight">
+        {/* Nombre del jugador */}
+        <p className="font-bold text-gray-800 text-sm truncate w-full leading-tight">
           {turno.cliente_nombre} {turno.cliente_apellido}
         </p>
 
         {/* Horario */}
-        <div className="text-[10px] sm:text-sm font-semibold opacity-80 mt-0.5 sm:mt-1 tabular-nums">
+        <div className="text-xs text-gray-500 mt-0.5 tabular-nums">
           {turno.hora_inicio?.substring(0, 5)} -{' '}
           {calcularHoraFinReal(turno.hora_inicio?.substring(0, 5), turno.duracion_minutos || 90)}
         </div>
 
         {/* Cancha (redundante en mobile: la columna ya la identifica) */}
-        <div className="hidden sm:block text-[10px] sm:text-xs font-medium uppercase opacity-60 mt-0.5 truncate w-full">
+        <div className="hidden sm:block text-[11px] text-gray-400 uppercase font-medium mt-0.5 truncate w-full">
           {turno.cancha_nombre || turno.cancha}
         </div>
 
         {/* Estado / Badge diferenciador */}
         <span
-          className={`mt-1 sm:mt-2 text-[9px] sm:text-[10px] font-bold px-1.5 py-0.5 rounded-md w-fit leading-none ${
-            esAbono ? 'bg-amber-200/80 text-amber-900' : estilos.badge
+          className={`mt-1.5 text-[10px] font-semibold px-2 py-0.5 rounded-full w-fit leading-none ${
+            esAbono
+              ? 'bg-amber-100 text-amber-800'
+              : esPagado
+              ? 'bg-emerald-100 text-emerald-800'
+              : 'bg-sky-100 text-sky-800'
           }`}
         >
-          <span className="sm:hidden">
-            {esAbono ? 'Abono' : estado === 'pagado' ? 'Pagado' : 'Confirmado'}
-          </span>
-          <span className="hidden sm:inline">{esAbono ? 'Abonado (Fijo)' : estilos.label}</span>
+          {esAbono ? 'Abono Fijo' : esPagado ? 'Pagado ✓' : 'Confirmado'}
         </span>
 
         {/* Botón de menú */}
@@ -396,9 +435,9 @@ function BloqueOcupado({ turno, colorHex, onAbrirCobro }) {
           type="button"
           onClick={(e) => { e.stopPropagation(); setShowMenu(true); }}
           aria-label="Acciones del turno"
-          className="absolute top-1 right-1 sm:top-2 sm:right-2 w-7 sm:w-6 h-7 sm:h-6 rounded flex items-center justify-center opacity-70 sm:opacity-40 hover:opacity-100 transition-opacity bg-white/60 hover:bg-white active:scale-90"
+          className="absolute top-1 right-1 sm:top-2 sm:right-2 w-7 sm:w-6 h-7 sm:h-6 rounded-lg flex items-center justify-center opacity-70 sm:opacity-40 hover:opacity-100 transition-opacity bg-white/70 hover:bg-white active:scale-90 shadow-2xs"
         >
-          <MoreVertical className="w-4 h-4" />
+          <MoreVertical className="w-4 h-4 text-slate-600" />
         </button>
       </div>
 
@@ -565,9 +604,9 @@ export default function AgendaDiaria({ fecha: fechaProp }) {
           <div className="flex-1 overflow-auto overscroll-contain-smooth">
             <div className="min-w-full w-max flex flex-col">
               {/* ─── Cabeceras de la Matriz (X-Axis) ─── */}
-              <div className="flex flex-row sticky top-0 z-40 border-b border-slate-200 bg-white min-w-full">
-                <div className="sticky left-0 z-50 bg-white border-r border-slate-100 py-2.5 sm:py-3 px-1 sm:px-2 flex items-center justify-center w-16 sm:w-20 shrink-0">
-                  <span className="text-[10px] sm:text-xs font-bold text-slate-400 uppercase tracking-wider">
+              <div className="flex flex-row sticky top-0 z-40 border-b border-slate-200 bg-slate-50/70 backdrop-blur-xs min-w-full">
+                <div className="sticky left-0 z-50 bg-slate-50 border-r border-slate-200/80 py-3.5 sm:py-4 px-2 flex items-center justify-center w-16 sm:w-20 shrink-0">
+                  <span className="text-xs font-medium text-slate-400 uppercase tracking-wider">
                     Hora
                   </span>
                 </div>
@@ -575,20 +614,20 @@ export default function AgendaDiaria({ fecha: fechaProp }) {
                 {canchas.map((cancha, i) => (
                   <div
                     key={cancha.id}
-                    className={`flex-1 min-w-[140px] py-2.5 sm:py-3 px-2 text-center ${
-                      i < canchas.length - 1 ? 'border-r border-slate-100' : ''
+                    className={`flex-1 min-w-[140px] py-3.5 sm:py-4 px-3 text-center bg-slate-50/50 ${
+                      i < canchas.length - 1 ? 'border-r border-slate-200/80' : ''
                     }`}
                   >
-                    <div className="flex items-center justify-center gap-1.5 sm:gap-2 min-w-0">
+                    <div className="flex items-center justify-center gap-2 min-w-0">
                       <span
-                        className={`w-2 h-2 rounded-full shrink-0 ${cancha.colorHex ? '' : cancha.dot || 'bg-red-500'}`}
+                        className={`w-2.5 h-2.5 rounded-full shrink-0 shadow-xs ${cancha.colorHex ? '' : cancha.dot || 'bg-red-500'}`}
                         style={cancha.colorHex ? { backgroundColor: cancha.colorHex } : undefined}
                       />
-                      <span className="text-[11px] sm:text-sm font-bold text-slate-700 uppercase tracking-wide truncate">
+                      <span className="font-semibold text-gray-700 tracking-wide text-sm truncate uppercase">
                         {cancha.nombre || 'Cancha'}
                       </span>
                     </div>
-                    <p className="text-[9px] sm:text-[10px] text-slate-400 font-medium mt-0.5">
+                    <p className="text-[10px] sm:text-[11px] text-slate-400 font-medium mt-0.5">
                       {turnosPorCancha[cancha.dbId || cancha.id]?.length || 0} turnos
                     </p>
                   </div>
@@ -602,11 +641,11 @@ export default function AgendaDiaria({ fecha: fechaProp }) {
                 return (
                   <div key={bloque} className="flex flex-row border-b border-slate-100 group min-w-full">
                     {/* Celda de Hora (fija al scrollear en horizontal) */}
-                    <div className="sticky left-0 z-30 border-r border-slate-100 p-1.5 sm:p-2 flex flex-col items-center justify-center bg-slate-50 w-16 sm:w-20 shrink-0">
-                      <span className="text-[11px] sm:text-xs font-bold text-slate-600 tabular-nums">
+                    <div className="sticky left-0 z-30 border-r border-slate-100 p-1.5 sm:p-2 flex flex-col items-center justify-center bg-slate-50/50 w-16 sm:w-20 shrink-0">
+                      <span className="text-xs font-medium text-slate-500 tabular-nums">
                         {bloque}
                       </span>
-                      <span className="text-[9px] sm:text-[10px] text-slate-400 font-medium tabular-nums">
+                      <span className="text-[10px] text-slate-400/80 font-normal tabular-nums">
                         {horaFin}
                       </span>
                     </div>
@@ -621,7 +660,7 @@ export default function AgendaDiaria({ fecha: fechaProp }) {
                       return (
                         <div
                           key={cancha.id}
-                          className={`flex-1 min-w-[140px] relative min-h-[54px] sm:min-h-[60px] cursor-pointer group hover:bg-slate-50 active:bg-slate-100 transition-colors ${
+                          className={`flex-1 min-w-[140px] relative min-h-[54px] sm:min-h-[60px] cursor-pointer group/cell hover:bg-slate-50 transition-colors duration-200 ${
                             i < canchas.length - 1 ? 'border-r border-slate-100' : ''
                           } ${turno ? 'z-10' : 'z-0'}`}
                           onClick={() => {
@@ -638,16 +677,17 @@ export default function AgendaDiaria({ fecha: fechaProp }) {
                             />
                           ) : (
                             <>
-                              {/* Hover (desktop) */}
-                              <div className="hidden group-hover:flex absolute inset-0 items-center justify-center">
-                                <span className="bg-white border shadow-sm px-3 py-1 rounded-full text-sm font-bold text-slate-700">
-                                  + Reservar
+                              {/* Hover (desktop): botón más destacado al pasar el cursor */}
+                              <div className="hidden group-hover/cell:flex absolute inset-0 items-center justify-center animate-in fade-in zoom-in-95 duration-150">
+                                <span className="inline-flex items-center gap-1.5 bg-white border border-slate-200 shadow-sm hover:shadow px-3 py-1 rounded-full text-xs font-semibold text-slate-700 tracking-wide transition-all group-hover/cell:scale-105">
+                                  <Plus className="w-3.5 h-3.5 text-punto-brand" />
+                                  Reservar
                                 </span>
                               </div>
-                              {/* Mobile: sin hover, se muestra un alvo táctil permanente */}
-                              <div className="sm:hidden absolute inset-0 flex items-center justify-center pointer-events-none">
-                                <span className="w-7 h-7 rounded-full bg-slate-100 text-slate-400 flex items-center justify-center">
-                                  <Plus className="w-4 h-4" />
+                              {/* Mobile: alvo sutil */}
+                              <div className="sm:hidden absolute inset-0 flex items-center justify-center pointer-events-none opacity-40">
+                                <span className="w-6 h-6 rounded-full bg-slate-100 text-slate-400 flex items-center justify-center">
+                                  <Plus className="w-3.5 h-3.5" />
                                 </span>
                               </div>
                             </>

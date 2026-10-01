@@ -20,6 +20,7 @@ const ETIQUETA_METODO = {
   efectivo: 'Efectivo',
   transferencia: 'Transferencia / MP',
   tarjeta: 'Tarjeta Débito',
+  mixto: 'Pago Mixto',
 };
 
 export default function CajaDiaria() {
@@ -340,7 +341,14 @@ export default function CajaDiaria() {
                           <p className="font-bold text-slate-900 text-sm font-mono truncate">
                             {item.ticket || `#${item.id.slice(0, 6)}`}
                           </p>
-                          <span className="text-[10px] font-semibold text-slate-400 bg-zinc-100 px-1.5 py-0.5 rounded shrink-0">
+                          <span
+                            title={item.metodo_pago}
+                            className={`text-[10px] font-semibold px-1.5 py-0.5 rounded shrink-0 ${
+                              item.metodo_pago?.startsWith('Mixto')
+                                ? 'bg-purple-100 text-purple-700 font-bold'
+                                : 'text-slate-500 bg-zinc-100'
+                            }`}
+                          >
                             {ETIQUETA_METODO[item.metodo_pago] || item.metodo_pago}
                           </span>
                         </div>

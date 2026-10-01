@@ -135,7 +135,7 @@ create table if not exists public.ventas_cantina (
 
 alter table public.ventas_cantina drop constraint if exists ventas_cantina_metodo_check;
 alter table public.ventas_cantina add constraint ventas_cantina_metodo_check
-  check (metodo_pago in ('efectivo', 'transferencia', 'tarjeta'));
+  check (metodo_pago in ('efectivo', 'transferencia', 'tarjeta', 'mixto') or metodo_pago like 'Mixto%');
 
 create index if not exists ventas_cantina_fecha_idx on public.ventas_cantina (fecha);
 
