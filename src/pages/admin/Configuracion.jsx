@@ -26,6 +26,8 @@ export default function Configuracion() {
     setPrecioBaseCancha,
     incluyeManana,
     setIncluyeManana,
+    canchas,
+    actualizarCancha,
     modoLocal,
     falla,
     recargar,
@@ -319,6 +321,66 @@ export default function Configuracion() {
             <Save className="w-3.5 h-3.5" />
             Guardar Tarifa
           </button>
+        </div>
+      </div>
+
+      {/* ─── Sección Nueva: Gestión de Canchas ─── */}
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+        <div className="bg-slate-50 px-4 sm:px-6 py-3.5 sm:py-4 border-b border-slate-200 flex items-center gap-3">
+          <div className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center">
+            <Building2 className="w-4 h-4" />
+          </div>
+          <div>
+            <h2 className="font-bold text-slate-900 text-base">
+              Gestión de Canchas
+            </h2>
+            <p className="text-xs text-slate-400 font-medium">
+              Configura los nombres y colores distintivos de cada cancha.
+            </p>
+          </div>
+        </div>
+        <div className="p-4 sm:p-6 flex flex-col gap-4">
+          {canchas.map((cancha) => (
+            <div key={cancha.id} className="flex flex-col sm:flex-row gap-4 items-start sm:items-center p-4 bg-slate-50 rounded-xl border border-slate-100">
+              <div className="flex-1 w-full">
+                <label className="block text-xs font-bold text-slate-500 mb-1.5 uppercase tracking-wide">
+                  Nombre de la Cancha
+                </label>
+                <input
+                  type="text"
+                  defaultValue={cancha.nombre}
+                  onBlur={(e) => {
+                    if (e.target.value !== cancha.nombre) {
+                      actualizarCancha(cancha.id, { nombre: e.target.value });
+                    }
+                  }}
+                  className="w-full bg-white border border-slate-200 rounded-xl px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900"
+                />
+              </div>
+              <div className="w-full sm:w-auto flex items-end gap-3">
+                <div className="flex-1">
+                  <label className="block text-xs font-bold text-slate-500 mb-1.5 uppercase tracking-wide">
+                    Color Visual
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="color"
+                      defaultValue={cancha.color_identificador || '#64748b'}
+                      onBlur={(e) => {
+                        if (e.target.value !== cancha.color_identificador) {
+                          actualizarCancha(cancha.id, { color_identificador: e.target.value });
+                        }
+                      }}
+                      className="w-10 h-10 p-1 bg-white border border-slate-200 rounded-lg cursor-pointer"
+                    />
+                    <span className="text-xs font-medium text-slate-400">
+                      Hex
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          ))}
         </div>
       </div>
 

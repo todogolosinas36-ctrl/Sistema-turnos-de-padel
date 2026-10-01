@@ -491,6 +491,30 @@ export function TurnosProvider({ children }) {
     [modoLocal]
   );
 
+  const actualizarCancha = useCallback(
+    async (id, cambios) => {
+      if (modoLocal) {
+        setCanchas((prev) => prev.map((c) => (c.id === id ? { ...c, ...cambios } : c)));
+        return null;
+      }
+      const { data, error } = await supabase
+        .from('canchas')
+        .update(cambios)
+        .eq('id', id)
+        .select()
+        .single();
+      
+      if (error) {
+        console.error('[Turnos] Error al actualizar cancha:', error.message);
+        throw error;
+      }
+      
+      setCanchas((prev) => prev.map((c) => (c.id === id ? { ...c, ...data } : c)));
+      return data;
+    },
+    [modoLocal]
+  );
+
   /* ══════════════════════════════════════════════════════════════════════
      Derivados
      ══════════════════════════════════════════════════════════════════════ */
@@ -581,7 +605,9 @@ export function TurnosProvider({ children }) {
       value={{
         // datos
         canchas,
+        canchas,
         canchasActivas,
+        actualizarCancha,
         nombreCancha,
         turnos,
         turnosFijos,

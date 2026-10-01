@@ -46,6 +46,16 @@ const ESTADO_ESTILOS = {
     badge: 'bg-purple-200/70 text-purple-900 border border-purple-300',
     label: 'Abono Fijo',
   },
+  abono_pagado: {
+    card:  'bg-purple-100 border-purple-300 text-purple-900',
+    badge: 'bg-emerald-100 text-emerald-800 border-emerald-300',
+    label: 'Abono Pagado ✓',
+  },
+  abono_parcial: {
+    card:  'bg-purple-100 border-purple-300 text-purple-900',
+    badge: 'bg-orange-100 text-orange-800 border-orange-300',
+    label: 'Abono Parcial',
+  },
   pendiente: {
     card:  'bg-pink-100 border-pink-300 text-pink-900',
     badge: 'bg-pink-200/70 text-pink-900 border border-pink-300',
@@ -438,13 +448,17 @@ function BloqueOcupado({ turno, colorHex, onAbrirCobro }) {
   const heightPercent = span * 100;
 
   const esAbono = Boolean(turno.es_fijo);
-  const esPagado = turno.estado === 'pagado';
+  const esPagado = turno.estado === 'pagado' || Boolean(turno.pagado) || Boolean(turno.cobrado_el);
   const esPendiente = turno.estado === 'pendiente' || turno.estado === 'seña' || turno.estado === 'con_seña';
   const esPagoParcial = detectarPagoParcial(turno);
   const textoSplit = textoJugadoresPagados(turno);
 
   let configEstado = ESTADO_ESTILOS.confirmado;
-  if (esAbono) {
+  if (esAbono && esPagado) {
+    configEstado = ESTADO_ESTILOS.abono_pagado;
+  } else if (esAbono && esPagoParcial) {
+    configEstado = ESTADO_ESTILOS.abono_parcial;
+  } else if (esAbono) {
     configEstado = ESTADO_ESTILOS.abono;
   } else if (esPagado) {
     configEstado = ESTADO_ESTILOS.pagado;
@@ -738,20 +752,20 @@ export default function AgendaDiaria({ fecha: fechaProp }) {
                 {canchas.map((cancha, i) => (
                   <div
                     key={cancha.id}
-                    className={`flex-1 min-w-[140px] py-1 sm:py-1.5 px-2 text-center bg-white ${
+                    className={`flex-1 min-w-[140px] py-2 px-2 text-center bg-white border-b-4 shadow-sm ${
                       i < canchas.length - 1 ? 'border-r border-slate-200' : ''
                     }`}
+                    style={{ 
+                      borderBottomColor: cancha.color_identificador || '#94a3b8',
+                      color: cancha.color_identificador || '#475569' 
+                    }}
                   >
                     <div className="flex items-center justify-center gap-1.5 min-w-0">
-                      <span
-                        className={`w-2 h-2 rounded-full shrink-0 shadow-2xs ${cancha.colorHex ? '' : cancha.dot || 'bg-red-500'}`}
-                        style={cancha.colorHex ? { backgroundColor: cancha.colorHex } : undefined}
-                      />
-                      <span className="font-semibold text-gray-700 tracking-wide text-xs sm:text-sm truncate uppercase leading-tight">
+                      <span className="font-extrabold tracking-wide text-sm sm:text-base truncate uppercase leading-tight">
                         {cancha.nombre || 'Cancha'}
                       </span>
                     </div>
-                    <p className="text-[10px] text-slate-400 font-medium leading-none mt-0.5">
+                    <p className="text-[10px] font-medium leading-none mt-1 opacity-70">
                       {turnosPorCancha[cancha.dbId || cancha.id]?.length || 0} turnos
                     </p>
                   </div>
