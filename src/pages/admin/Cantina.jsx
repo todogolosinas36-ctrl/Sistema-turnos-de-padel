@@ -35,6 +35,7 @@ export default function Cantina() {
   const [categoriaSeleccionada, setCategoriaSeleccionada] = useState('Todos');
   const [ticket, setTicket] = useState([]);
   const [metodoPago, setMetodoPago] = useState('efectivo');
+  const [modalCobroAbierto, setModalCobroAbierto] = useState(false);
   const [cobrando, setCobrando] = useState(false);
   const [ultimoCobro, setUltimoCobro] = useState(null);
   const [error, setError] = useState(null);
@@ -122,8 +123,8 @@ export default function Cantina() {
   const total = ticket.reduce((sum, item) => sum + item.precio * item.cantidad, 0);
   const cantidadItems = ticket.reduce((sum, item) => sum + item.cantidad, 0);
 
-  /* ─── Cobro: primero la venta, después el stock ─── */
-  const procesarCobro = useCallback(async () => {
+  /* ─── Cobro: venta en ventas_cantina, detalle iterando en ventas_cantina_detalle, y ajuste de stock ─── */
+  const confirmarPago = useCallback(async () => {
     if (ticket.length === 0 || cobrando) return;
 
     setCobrando(true);
@@ -138,6 +139,7 @@ export default function Cantina() {
     const ticketCode = `TCK-${Date.now().toString().slice(-6)}`;
 
     try {
+      // 1. Insertar venta principal en ventas_cantina
       const { data: venta, error: errVenta } = await supabase
         .from('ventas_cantina')
         .insert([
@@ -145,8 +147,8 @@ export default function Cantina() {
             fecha: hoyISO(),
             hora,
             metodo_pago: metodoPago,
-            total,
-            cantidad_items: cantidadItems,
+            total: Math.round(Number(total)),
+            cantidad_items: Number(cantidadItems),
             ticket: ticketCode,
           },
         ])
@@ -155,25 +157,25 @@ export default function Cantina() {
 
       if (errVenta) throw errVenta;
 
-      // Detalle: guarda nombre y precio históricos, no los de referencia.
-      const detalle = ticket.map((item) => ({
-        venta_id: venta.id,
-        articulo_id: String(item.id),
-        nombre: item.nombre,
-        precio: item.precio,
-        cantidad: item.cantidad,
-      }));
+      // 2. Insertar cada ítem iterando sobre ventas_cantina_detalle
+      for (const item of ticket) {
+        const { error: errDetalle } = await supabase
+          .from('ventas_cantina_detalle')
+          .insert({
+            venta_id: venta.id,
+            articulo_id: String(item.id),
+            nombre: item.nombre,
+            precio: Math.round(Number(item.precio)),
+            cantidad: Number(item.cantidad),
+          });
 
-      const { error: errDetalle } = await supabase
-        .from('ventas_cantina_detalle')
-        .insert(detalle);
-
-      if (errDetalle) {
-        // La venta ya quedó registrada: avisar pero no perderla.
-        console.error('[Cantina] Venta guardada sin detalle:', errDetalle);
+        if (errDetalle) {
+          console.error('[Cantina] Error al insertar ítem en ventas_cantina_detalle:', item.nombre, errDetalle);
+          throw errDetalle;
+        }
       }
 
-      // Stock recién ahora, con la venta confirmada.
+      // 3. Descontar stock tras confirmar la venta y su detalle
       for (const item of ticket) {
         await ajustarStock(item.id, -item.cantidad);
       }
@@ -186,6 +188,7 @@ export default function Cantina() {
         timestamp: hora,
       });
       setTicket([]);
+      setModalCobroAbierto(false);
       setTimeout(() => setUltimoCobro(null), 5000);
     } catch (err) {
       console.error('[Cantina] No se pudo registrar la venta:', err);
@@ -201,6 +204,10 @@ export default function Cantina() {
   useEffect(() => {
     const onKeyDown = (e) => {
       if (e.key === 'Escape') {
+        if (modalCobroAbierto) {
+          setModalCobroAbierto(false);
+          return;
+        }
         if (busqueda) {
           setBusqueda('');
         } else if (document.activeElement === searchInputRef.current) {
@@ -212,18 +219,24 @@ export default function Cantina() {
       const escribiendo = document.activeElement === searchInputRef.current;
 
       if (e.key === '/') {
-        e.preventDefault();
-        searchInputRef.current?.focus();
+        if (!modalCobroAbierto) {
+          e.preventDefault();
+          searchInputRef.current?.focus();
+        }
         return;
       }
 
       if (e.key === 'Enter' && !escribiendo) {
         e.preventDefault();
-        procesarCobro();
+        if (modalCobroAbierto) {
+          confirmarPago();
+        } else if (ticket.length > 0) {
+          setModalCobroAbierto(true);
+        }
         return;
       }
 
-      if (!escribiendo && TECLAS.includes(e.key)) {
+      if (!escribiendo && !modalCobroAbierto && TECLAS.includes(e.key)) {
         e.preventDefault();
         const indice = TECLAS.indexOf(e.key);
         if (productosFiltrados[indice]) agregarProducto(productosFiltrados[indice]);
@@ -232,7 +245,7 @@ export default function Cantina() {
 
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [productosFiltrados, agregarProducto, busqueda, procesarCobro]);
+  }, [productosFiltrados, agregarProducto, busqueda, modalCobroAbierto, ticket.length, confirmarPago]);
 
   const formatearPrecio = (valor) =>
     new Intl.NumberFormat('es-AR', {
@@ -510,28 +523,7 @@ export default function Cantina() {
           </div>
 
           <div className="bg-zinc-50 p-4 sm:p-5 rounded-b-2xl border-t border-zinc-100 flex flex-col shrink-0">
-            <div className="grid grid-cols-3 gap-2 mb-4">
-              {METODOS_PAGO.map((metodo) => {
-                const Icono = metodo.icon;
-                return (
-                  <button
-                    key={metodo.id}
-                    type="button"
-                    onClick={() => setMetodoPago(metodo.id)}
-                    className={`py-2.5 px-2 rounded-lg text-xs font-bold flex flex-col items-center gap-1 transition-all cursor-pointer ${
-                      metodoPago === metodo.id
-                        ? 'bg-slate-900 text-white shadow-xs'
-                        : 'bg-white text-slate-600 border border-zinc-200 hover:bg-zinc-100'
-                    }`}
-                  >
-                    <Icono className="w-3.5 h-3.5" />
-                    <span className="truncate">{metodo.label}</span>
-                  </button>
-                );
-              })}
-            </div>
-
-            <div className="space-y-1.5 pt-2 border-t border-zinc-200/60">
+            <div className="space-y-1.5">
               <div className="flex justify-between text-xs text-slate-500 font-medium">
                 <span>Artículos</span>
                 <span>{cantidadItems} unidades</span>
@@ -546,31 +538,130 @@ export default function Cantina() {
 
             <button
               type="button"
-              disabled={ticket.length === 0 || cobrando}
-              onClick={procesarCobro}
+              disabled={ticket.length === 0}
+              onClick={() => setModalCobroAbierto(true)}
               className={`w-full bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-black text-base sm:text-lg py-4 rounded-xl shadow-md mt-4 flex justify-between items-center gap-2 px-4 sm:px-6 transition-all ${
-                ticket.length === 0 || cobrando
+                ticket.length === 0
                   ? 'opacity-50 cursor-not-allowed shadow-none'
                   : 'hover:shadow-lg active:scale-[0.99] cursor-pointer'
               }`}
             >
-              {cobrando ? (
-                <>
-                  <span className="flex items-center gap-2">
-                    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                    Registrando…
-                  </span>
-                </>
-              ) : (
-                <>
-                  <span>Cobrar</span>
-                  <ArrowRight className="w-5 h-5 shrink-0" />
-                </>
-              )}
+              <span>Cobrar</span>
+              <ArrowRight className="w-5 h-5 shrink-0" />
             </button>
           </div>
         </div>
       </div>
+
+      {/* ═══ Modal de Cobro ═══ */}
+      {modalCobroAbierto && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-zinc-950/60 backdrop-blur-xs animate-in fade-in duration-150"
+          onClick={() => !cobrando && setModalCobroAbierto(false)}
+        >
+          <div
+            className="bg-white w-full max-w-md rounded-2xl sm:rounded-3xl shadow-2xl border border-zinc-200 overflow-hidden animate-in zoom-in-95 duration-150 flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header del Modal */}
+            <div className="p-4 sm:p-5 border-b border-zinc-100 flex items-center justify-between bg-zinc-50/50">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center font-bold">
+                  <Receipt className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="font-black text-slate-900 text-base leading-none">Confirmar Cobro</h3>
+                  <span className="text-[11px] text-slate-400 font-semibold">{cantidadItems} artículos en el ticket</span>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => !cobrando && setModalCobroAbierto(false)}
+                disabled={cobrando}
+                className="w-8 h-8 rounded-lg hover:bg-zinc-100 text-slate-400 hover:text-slate-700 flex items-center justify-center transition-colors cursor-pointer disabled:opacity-50"
+                aria-label="Cerrar modal"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Contenido del Modal */}
+            <div className="p-5 sm:p-6 space-y-5">
+              {/* Total a pagar */}
+              <div className="bg-blue-50/60 border border-blue-100 rounded-2xl p-4 sm:p-5 text-center">
+                <span className="text-xs font-bold text-blue-700 uppercase tracking-wider block mb-1">
+                  Total a pagar
+                </span>
+                <span className="text-3xl sm:text-4xl font-black text-slate-900 tracking-tight tabular-nums block">
+                  {formatearPrecio(total)}
+                </span>
+              </div>
+
+              {/* Selector de Método de Pago */}
+              <div>
+                <label className="text-xs font-bold text-slate-700 uppercase tracking-wider block mb-2.5">
+                  Método de pago
+                </label>
+                <div className="grid grid-cols-3 gap-2.5">
+                  {METODOS_PAGO.map((metodo) => {
+                    const Icono = metodo.icon;
+                    const seleccionado = metodoPago === metodo.id;
+                    return (
+                      <button
+                        key={metodo.id}
+                        type="button"
+                        onClick={() => setMetodoPago(metodo.id)}
+                        className={`py-3 px-2 rounded-xl text-xs font-bold flex flex-col items-center gap-1.5 transition-all cursor-pointer ${
+                          seleccionado
+                            ? 'bg-slate-900 text-white shadow-md ring-2 ring-slate-900/20'
+                            : 'bg-white text-slate-600 border border-zinc-200 hover:bg-zinc-50 hover:border-zinc-300'
+                        }`}
+                      >
+                        <Icono className={`w-4 h-4 ${seleccionado ? 'text-white' : 'text-slate-500'}`} />
+                        <span className="truncate">{metodo.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+
+            {/* Footer con Botón Confirmar Pago */}
+            <div className="p-5 sm:p-6 bg-zinc-50 border-t border-zinc-100 flex flex-col gap-2">
+              <button
+                type="button"
+                disabled={ticket.length === 0 || cobrando}
+                onClick={confirmarPago}
+                className={`w-full bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-black text-base sm:text-lg py-3.5 sm:py-4 rounded-xl shadow-md flex justify-center items-center gap-2 transition-all ${
+                  ticket.length === 0 || cobrando
+                    ? 'opacity-50 cursor-not-allowed shadow-none'
+                    : 'hover:shadow-lg active:scale-[0.99] cursor-pointer'
+                }`}
+              >
+                {cobrando ? (
+                  <>
+                    <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    <span>Registrando venta…</span>
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle2 className="w-5 h-5 shrink-0" />
+                    <span>Confirmar Pago</span>
+                  </>
+                )}
+              </button>
+              <button
+                type="button"
+                onClick={() => setModalCobroAbierto(false)}
+                disabled={cobrando}
+                className="w-full py-2.5 text-xs font-bold text-slate-500 hover:text-slate-800 transition-colors text-center cursor-pointer disabled:opacity-50"
+              >
+                Volver al ticket
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

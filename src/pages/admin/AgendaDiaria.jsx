@@ -470,11 +470,6 @@ export default function AgendaDiaria({ fecha: fechaProp }) {
 
   return (
     <div className="flex flex-col gap-4 sm:gap-6 flex-1 min-h-0">
-      {/* ─── Cabecera ─── */}
-      <div className="shrink-0">
-        <h1 className="text-xl sm:text-2xl font-black text-zinc-900 tracking-tight">Grilla de Turnos</h1>
-      </div>
-
       {/* ─── Contenedor Principal de la Matriz ─── */}
       <div className="flex flex-col flex-1 min-h-[440px] bg-white rounded-2xl border border-zinc-200 shadow-sm overflow-hidden">
         {/* ─── Cabecera Superior (Controles) ─── */}

@@ -12,8 +12,17 @@ import {
   Tag,
   Sparkles,
   Pencil,
-  AlertTriangle
+  AlertTriangle,
+  Banknote,
+  Smartphone,
+  CreditCard,
 } from 'lucide-react';
+
+const METODOS_PAGO = [
+  { id: 'efectivo', label: 'Efectivo', icon: Banknote },
+  { id: 'transferencia', label: 'Transf / MP', icon: Smartphone },
+  { id: 'tarjeta', label: 'Tarjeta', icon: CreditCard },
+];
 
 export default function ModalCobro({ isOpen, onClose, turno, onConfirmarCobro }) {
   const { articulos, ajustarStock } = useArticulos();
@@ -38,6 +47,10 @@ export default function ModalCobro({ isOpen, onClose, turno, onConfirmarCobro })
   const [busquedaKiosco, setBusquedaKiosco] = useState('');
   const [avisoStock, setAvisoStock] = useState(null);
   const searchInputRef = useRef(null);
+
+  // Sub-modal para seleccionar método de pago de un jugador
+  const [jugadorParaCobro, setJugadorParaCobro] = useState(null);
+  const [metodoPagoModal, setMetodoPagoModal] = useState('efectivo');
 
   // Inicializar o ajustar jugadores cuando cambia la división
   useEffect(() => {
@@ -76,7 +89,27 @@ export default function ModalCobro({ isOpen, onClose, turno, onConfirmarCobro })
     setBusquedaKiosco('');
     setAvisoStock(null);
     setDivision(4);
-  }, [isOpen, turno, precioBaseCancha]);
+    setJugadorParaCobro(null);
+    setMetodoPagoModal('efectivo');
+  }, [isOpen, turno?.id, precioBaseCancha]);
+
+  // Manejo de atajo Escape para cerrar sub-modales
+  useEffect(() => {
+    if (!isOpen) return;
+    const onKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        if (jugadorParaCobro) {
+          setJugadorParaCobro(null);
+        } else if (jugadorKioscoActivo !== null) {
+          setJugadorKioscoActivo(null);
+        } else if (modalGastoCompartido) {
+          setModalGastoCompartido(false);
+        }
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [isOpen, jugadorParaCobro, jugadorKioscoActivo, modalGastoCompartido]);
 
   // Enfocar buscador al abrir el sub-modal de kiosco
   useEffect(() => {
@@ -215,14 +248,14 @@ export default function ModalCobro({ isOpen, onClose, turno, onConfirmarCobro })
     cobrado_el: new Date().toISOString(),
   });
 
-  // Cobro individual de un jugador
-  const cobrarJugador = (jugadorId) => {
+  // Cobro individual de un jugador con método de pago seleccionado
+  const confirmarCobroJugador = (jugadorId, metodo) => {
     setJugadores((prev) => {
       const actualizados = prev.map((jug) =>
-        jug.id === jugadorId ? { ...jug, pagado: true } : jug
+        jug.id === jugadorId ? { ...jug, pagado: true, metodoPago: metodo } : jug
       );
 
-      // Si todos quedaron cobrados, liquidamos el turno
+      // Si todos quedaron cobrados, liquidamos el turno automáticamente
       if (actualizados.every((j) => j.pagado)) {
         setTimeout(async () => {
           await descontarStockCobrado(actualizados);
@@ -233,6 +266,8 @@ export default function ModalCobro({ isOpen, onClose, turno, onConfirmarCobro })
 
       return actualizados;
     });
+
+    setJugadorParaCobro(null);
   };
 
   // Cobrar Todo Junto (botón maestro)
@@ -551,22 +586,32 @@ export default function ModalCobro({ isOpen, onClose, turno, onConfirmarCobro })
                     <button
                       type="button"
                       disabled={jugador.pagado}
-                      onClick={() => cobrarJugador(jugador.id)}
+                      onClick={() => {
+                        if (!jugador.pagado) {
+                          setMetodoPagoModal(jugador.metodoPago || 'efectivo');
+                          setJugadorParaCobro(jugador);
+                        }
+                      }}
                       className={`w-full py-2.5 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition-all ${
                         jugador.pagado
-                          ? 'bg-emerald-100 text-emerald-700 cursor-default'
+                          ? 'bg-emerald-100 text-emerald-800 border border-emerald-300/60 cursor-not-allowed pointer-events-none select-none shadow-none'
                           : 'bg-punto-brand hover:bg-punto-hover text-white shadow-xs active:scale-95 cursor-pointer'
                       }`}
                     >
                       {jugador.pagado ? (
                         <>
-                          <CheckCircle2 className="w-3.5 h-3.5" />
-                          Cobrado ✓
+                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                          <span>Cobrado ✓</span>
+                          {jugador.metodoPago && (
+                            <span className="text-[10px] font-semibold text-emerald-700 ml-0.5 uppercase tracking-wide">
+                              ({jugador.metodoPago === 'transferencia' ? 'Transf' : jugador.metodoPago})
+                            </span>
+                          )}
                         </>
                       ) : (
                         <>
-                          <DollarSign className="w-3.5 h-3.5" />
-                          Cobrar Jugador
+                          <DollarSign className="w-3.5 h-3.5 shrink-0" />
+                          <span>Cobrar Jugador</span>
                         </>
                       )}
                     </button>
@@ -803,6 +848,116 @@ export default function ModalCobro({ isOpen, onClose, turno, onConfirmarCobro })
                   </button>
                 </div>
               </form>
+            </div>
+          </div>
+        )}
+
+        {/* ─── SUB-MODAL: MÉTODO DE PAGO PARA COBRAR JUGADOR ─── */}
+        {jugadorParaCobro && (
+          <div
+            className="fixed inset-0 z-[65] flex items-end sm:items-center sm:justify-center bg-slate-900/50 backdrop-blur-xs sm:p-4"
+            onClick={(e) => e.target === e.currentTarget && setJugadorParaCobro(null)}
+          >
+            <div className="bg-white rounded-t-3xl sm:rounded-2xl shadow-2xl w-full sm:max-w-sm overflow-hidden animate-in fade-in slide-in-from-bottom sm:zoom-in-95 duration-150 border border-slate-200">
+              {/* Header */}
+              <div className="p-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between gap-3 shrink-0">
+                <div className="flex items-center gap-2 min-w-0">
+                  <div className="w-7 h-7 rounded-lg bg-punto-brand/10 text-punto-brand flex items-center justify-center font-bold shrink-0">
+                    <DollarSign className="w-4 h-4" />
+                  </div>
+                  <div className="min-w-0">
+                    <h3 className="font-black text-sm text-slate-900 truncate">
+                      Cobrar {jugadorParaCobro.nombre}
+                    </h3>
+                    <span className="text-[10px] font-semibold text-slate-400 block truncate">
+                      Seleccioná el método de pago
+                    </span>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setJugadorParaCobro(null)}
+                  aria-label="Cerrar"
+                  className="w-8 h-8 rounded-lg bg-slate-200 text-slate-600 flex items-center justify-center hover:bg-slate-300 transition-colors cursor-pointer shrink-0"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* Body */}
+              <div className="p-5 space-y-4">
+                {/* Monto a cobrar */}
+                {(() => {
+                  const subtotalKiosco = jugadorParaCobro.itemsKiosco.reduce(
+                    (sum, it) => sum + it.precio * (it.cantidad || 1),
+                    0
+                  );
+                  const totalJugador = cuotaCanchaPorJugador + subtotalKiosco;
+
+                  return (
+                    <div className="bg-slate-50 border border-slate-200/80 rounded-2xl p-4 text-center">
+                      <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block mb-1">
+                        Total a cobrar
+                      </span>
+                      <span className="text-3xl font-black text-slate-900 tracking-tight tabular-nums block">
+                        {formatearPrecio(totalJugador)}
+                      </span>
+                      {subtotalKiosco > 0 && (
+                        <p className="text-[11px] text-slate-400 font-medium mt-1">
+                          Cancha {formatearPrecio(cuotaCanchaPorJugador)} + Extras {formatearPrecio(subtotalKiosco)}
+                        </p>
+                      )}
+                    </div>
+                  );
+                })()}
+
+                {/* Métodos de Pago */}
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-2">
+                    Método de Pago
+                  </label>
+                  <div className="grid grid-cols-3 gap-2">
+                    {METODOS_PAGO.map((metodo) => {
+                      const Icono = metodo.icon;
+                      const seleccionado = metodoPagoModal === metodo.id;
+                      return (
+                        <button
+                          key={metodo.id}
+                          type="button"
+                          onClick={() => setMetodoPagoModal(metodo.id)}
+                          className={`py-3 px-2 rounded-xl text-xs font-bold flex flex-col items-center gap-1.5 transition-all cursor-pointer ${
+                            seleccionado
+                              ? 'bg-slate-900 text-white shadow-sm ring-2 ring-slate-900/20'
+                              : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
+                          }`}
+                        >
+                          <Icono className={`w-4 h-4 ${seleccionado ? 'text-white' : 'text-slate-500'}`} />
+                          <span className="truncate">{metodo.label}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Botón Confirmar */}
+                <div className="pt-2 flex flex-col gap-2">
+                  <button
+                    type="button"
+                    onClick={() => confirmarCobroJugador(jugadorParaCobro.id, metodoPagoModal)}
+                    className="w-full py-3.5 rounded-xl bg-punto-brand hover:bg-punto-hover active:scale-[0.98] text-white text-xs sm:text-sm font-black shadow-md flex items-center justify-center gap-2 transition-all cursor-pointer"
+                  >
+                    <CheckCircle2 className="w-4 h-4 shrink-0" />
+                    <span>Confirmar Cobro</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setJugadorParaCobro(null)}
+                    className="w-full py-2 text-xs font-bold text-slate-500 hover:text-slate-800 transition-colors text-center cursor-pointer"
+                  >
+                    Cancelar
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         )}
