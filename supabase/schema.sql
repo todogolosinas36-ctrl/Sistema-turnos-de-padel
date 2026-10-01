@@ -34,7 +34,7 @@ do $$
 declare
   dupes text;
 begin
-  select string_agg(t.token_cancelacion, ', ')
+  select string_agg(t.token_cancelacion::text, ', ')
     into dupes
   from (
     select token_cancelacion

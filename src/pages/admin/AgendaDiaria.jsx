@@ -568,16 +568,11 @@ export default function AgendaDiaria({ fecha: fechaProp }) {
         ) : (
           /* ─── Matriz: scroll vertical + horizontal en mobile ─── */
           <div className="flex-1 overflow-auto overscroll-contain-smooth">
-            <div className="min-w-[320px] sm:min-w-0">
+            <div className="min-w-full w-max flex flex-col">
               {/* ─── Cabeceras de la Matriz (X-Axis) ─── */}
-              <div
-                className={`grid ${grilla.celdas} ${grilla.completo} sticky top-0 z-40 border-b border-slate-200 bg-white`}
-              >
-                <div
-                  className="sticky left-0 z-10 bg-white border-r border-slate-100 py-2.5 sm:py-3 px-1 sm:px-2 flex items-center justify-center"
-                  style={{ minWidth: grilla.anchoHora }}
-                >
-                  <span className="text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+              <div className="flex flex-row sticky top-0 z-40 border-b border-slate-200 bg-white min-w-full">
+                <div className="sticky left-0 z-50 bg-white border-r border-slate-100 py-2.5 sm:py-3 px-1 sm:px-2 flex items-center justify-center w-16 sm:w-20 shrink-0">
+                  <span className="text-[10px] sm:text-xs font-bold text-slate-400 uppercase tracking-wider">
                     Hora
                   </span>
                 </div>
@@ -585,7 +580,7 @@ export default function AgendaDiaria({ fecha: fechaProp }) {
                 {canchas.map((cancha, i) => (
                   <div
                     key={cancha.id}
-                    className={`py-2.5 sm:py-3 px-1 text-center min-w-0 ${
+                    className={`flex-1 min-w-[140px] py-2.5 sm:py-3 px-2 text-center ${
                       i < canchas.length - 1 ? 'border-r border-slate-100' : ''
                     }`}
                   >
@@ -610,12 +605,9 @@ export default function AgendaDiaria({ fecha: fechaProp }) {
                 const horaFin = calcularHoraFin(bloque, DURACION);
 
                 return (
-                  <div key={bloque} className={`grid ${grilla.celdas} ${grilla.completo} border-b border-slate-100 group`}>
+                  <div key={bloque} className="flex flex-row border-b border-slate-100 group min-w-full">
                     {/* Celda de Hora (fija al scrollear en horizontal) */}
-                    <div
-                      className="sticky left-0 z-30 border-r border-slate-100 p-1.5 sm:p-2 flex flex-col items-center justify-start bg-slate-50"
-                      style={{ minWidth: grilla.anchoHora }}
-                    >
+                    <div className="sticky left-0 z-30 border-r border-slate-100 p-1.5 sm:p-2 flex flex-col items-center justify-center bg-slate-50 w-16 sm:w-20 shrink-0">
                       <span className="text-[11px] sm:text-xs font-bold text-slate-600 tabular-nums">
                         {bloque}
                       </span>
@@ -634,7 +626,7 @@ export default function AgendaDiaria({ fecha: fechaProp }) {
                       return (
                         <div
                           key={cancha.id}
-                          className={`relative min-h-[54px] sm:min-h-[60px] cursor-pointer group hover:bg-slate-50 active:bg-slate-100 transition-colors ${
+                          className={`flex-1 min-w-[140px] relative min-h-[54px] sm:min-h-[60px] cursor-pointer group hover:bg-slate-50 active:bg-slate-100 transition-colors ${
                             i < canchas.length - 1 ? 'border-r border-slate-100' : ''
                           } ${turno ? 'z-10' : 'z-0'}`}
                           onClick={() => {
