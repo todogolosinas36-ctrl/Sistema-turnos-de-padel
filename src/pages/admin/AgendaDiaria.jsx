@@ -238,7 +238,7 @@ function BloqueAcciones({ turno, onCobrar, onCancelar, onClose }) {
 
   const cabeceraContexto = (
     <div className="border-b border-gray-100 pb-3 mb-1 px-4 pt-4 text-left">
-      <p className="font-bold text-gray-800 text-sm truncate leading-tight">
+      <p className="font-bold text-gray-800 text-sm truncate leading-tight capitalize">
         {nombreCliente}
       </p>
       <p className="text-xs text-gray-500 mt-1 tabular-nums flex items-center gap-1.5 flex-wrap">
@@ -391,8 +391,8 @@ function BloqueOcupado({ turno, colorHex, onAbrirCobro }) {
   return (
     <>
       <div
-        className={`absolute left-0 right-0 top-0 m-1 sm:m-1.5 rounded-xl p-2 sm:p-3 flex flex-col items-center justify-center text-center border-l-4 shadow-sm hover:shadow-md transition-all duration-200 cursor-pointer overflow-hidden z-20 select-none ${tarjetaCls}`}
-        style={{ height: `calc(${heightPercent}% - 12px)`, ...estiloColor }}
+        className={`absolute left-0 right-0 top-0 m-0.5 sm:m-1 rounded-lg sm:rounded-xl p-1 sm:p-2 flex flex-col items-center justify-center text-center border-l-4 shadow-2xs hover:shadow-sm transition-all duration-200 cursor-pointer overflow-hidden z-10 select-none animate-fade-in ${tarjetaCls}`}
+        style={{ height: `calc(${heightPercent}% - 6px)`, ...estiloColor }}
         onClick={() => {
           if (turno.estado !== 'pagado') {
             onAbrirCobro(turno);
@@ -402,24 +402,26 @@ function BloqueOcupado({ turno, colorHex, onAbrirCobro }) {
         }}
       >
         {/* Nombre del jugador */}
-        <p className="font-bold text-gray-800 text-sm truncate w-full leading-tight">
+        <p className="font-bold text-gray-800 text-xs sm:text-sm truncate w-full leading-tight capitalize">
           {turno.cliente_nombre} {turno.cliente_apellido}
         </p>
 
         {/* Horario */}
-        <div className="text-xs text-gray-500 mt-0.5 tabular-nums">
+        <div className="text-[10px] sm:text-[11px] text-gray-500 mt-0.5 tabular-nums leading-none">
           {turno.hora_inicio?.substring(0, 5)} -{' '}
           {calcularHoraFinReal(turno.hora_inicio?.substring(0, 5), turno.duracion_minutos || 90)}
         </div>
 
         {/* Cancha (redundante en mobile: la columna ya la identifica) */}
-        <div className="hidden sm:block text-[11px] text-gray-400 uppercase font-medium mt-0.5 truncate w-full">
-          {turno.cancha_nombre || turno.cancha}
-        </div>
+        {span >= 3 && (
+          <div className="hidden sm:block text-[10px] text-gray-400 uppercase font-medium mt-0.5 truncate w-full leading-none">
+            {turno.cancha_nombre || turno.cancha}
+          </div>
+        )}
 
         {/* Estado / Badge diferenciador */}
         <span
-          className={`mt-1.5 text-[10px] font-semibold px-2 py-0.5 rounded-full w-fit leading-none ${
+          className={`mt-0.5 sm:mt-1 text-[9px] sm:text-[10px] font-semibold px-1.5 py-0.2 rounded-full w-fit leading-none ${
             esAbono
               ? 'bg-amber-100 text-amber-800'
               : esPagado
@@ -602,11 +604,14 @@ export default function AgendaDiaria({ fecha: fechaProp }) {
         ) : (
           /* ─── Matriz: scroll vertical + horizontal en mobile ─── */
           <div className="flex-1 overflow-auto overscroll-contain-smooth">
-            <div className="min-w-full w-max flex flex-col">
+            <div
+              key={fecha}
+              className="min-w-full w-max flex flex-col animate-fade-in"
+            >
               {/* ─── Cabeceras de la Matriz (X-Axis) ─── */}
-              <div className="flex flex-row sticky top-0 z-40 border-b border-slate-200 bg-slate-50/70 backdrop-blur-xs min-w-full">
-                <div className="sticky left-0 z-50 bg-slate-50 border-r border-slate-200/80 py-3.5 sm:py-4 px-2 flex items-center justify-center w-16 sm:w-20 shrink-0">
-                  <span className="text-xs font-medium text-slate-400 uppercase tracking-wider">
+              <div className="flex flex-row sticky top-0 z-20 bg-white shadow-sm border-b border-slate-200 min-w-full">
+                <div className="sticky top-0 left-0 z-30 bg-white border-r border-slate-200 py-1 sm:py-1.5 px-2 flex items-center justify-center w-24 shrink-0">
+                  <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
                     Hora
                   </span>
                 </div>
@@ -614,20 +619,20 @@ export default function AgendaDiaria({ fecha: fechaProp }) {
                 {canchas.map((cancha, i) => (
                   <div
                     key={cancha.id}
-                    className={`flex-1 min-w-[140px] py-3.5 sm:py-4 px-3 text-center bg-slate-50/50 ${
-                      i < canchas.length - 1 ? 'border-r border-slate-200/80' : ''
+                    className={`flex-1 min-w-[140px] py-1 sm:py-1.5 px-2 text-center bg-white ${
+                      i < canchas.length - 1 ? 'border-r border-slate-200' : ''
                     }`}
                   >
-                    <div className="flex items-center justify-center gap-2 min-w-0">
+                    <div className="flex items-center justify-center gap-1.5 min-w-0">
                       <span
-                        className={`w-2.5 h-2.5 rounded-full shrink-0 shadow-xs ${cancha.colorHex ? '' : cancha.dot || 'bg-red-500'}`}
+                        className={`w-2 h-2 rounded-full shrink-0 shadow-2xs ${cancha.colorHex ? '' : cancha.dot || 'bg-red-500'}`}
                         style={cancha.colorHex ? { backgroundColor: cancha.colorHex } : undefined}
                       />
-                      <span className="font-semibold text-gray-700 tracking-wide text-sm truncate uppercase">
+                      <span className="font-semibold text-gray-700 tracking-wide text-xs sm:text-sm truncate uppercase leading-tight">
                         {cancha.nombre || 'Cancha'}
                       </span>
                     </div>
-                    <p className="text-[10px] sm:text-[11px] text-slate-400 font-medium mt-0.5">
+                    <p className="text-[10px] text-slate-400 font-medium leading-none mt-0.5">
                       {turnosPorCancha[cancha.dbId || cancha.id]?.length || 0} turnos
                     </p>
                   </div>
@@ -639,13 +644,13 @@ export default function AgendaDiaria({ fecha: fechaProp }) {
                 const horaFin = calcularHoraFin(bloque, DURACION);
 
                 return (
-                  <div key={bloque} className="flex flex-row border-b border-slate-100 group min-w-full">
+                  <div key={bloque} className="flex flex-row border-b border-slate-100 min-w-full">
                     {/* Celda de Hora (fija al scrollear en horizontal) */}
-                    <div className="sticky left-0 z-30 border-r border-slate-100 p-1.5 sm:p-2 flex flex-col items-center justify-center bg-slate-50/50 w-16 sm:w-20 shrink-0">
-                      <span className="text-xs font-medium text-slate-500 tabular-nums">
+                    <div className="sticky left-0 z-10 border-r border-slate-100 px-1 py-0.5 sm:py-1 flex flex-col items-center justify-center bg-white/95 backdrop-blur-xs w-24 shrink-0">
+                      <span className="text-xs font-semibold text-slate-600 tabular-nums leading-none">
                         {bloque}
                       </span>
-                      <span className="text-[10px] text-slate-400/80 font-normal tabular-nums">
+                      <span className="text-[10px] text-slate-400 tabular-nums leading-none mt-0.5">
                         {horaFin}
                       </span>
                     </div>
@@ -660,7 +665,11 @@ export default function AgendaDiaria({ fecha: fechaProp }) {
                       return (
                         <div
                           key={cancha.id}
-                          className={`flex-1 min-w-[140px] relative min-h-[54px] sm:min-h-[60px] cursor-pointer group/cell hover:bg-slate-50 transition-colors duration-200 ${
+                          className={`flex-1 min-w-[140px] relative min-h-[36px] sm:min-h-[40px] ${
+                            !turno
+                              ? 'group cursor-pointer transition-colors duration-200 hover:bg-slate-50'
+                              : ''
+                          } ${
                             i < canchas.length - 1 ? 'border-r border-slate-100' : ''
                           } ${turno ? 'z-10' : 'z-0'}`}
                           onClick={() => {
@@ -676,21 +685,11 @@ export default function AgendaDiaria({ fecha: fechaProp }) {
                               onAbrirCobro={setTurnoParaCobro}
                             />
                           ) : (
-                            <>
-                              {/* Hover (desktop): botón más destacado al pasar el cursor */}
-                              <div className="hidden group-hover/cell:flex absolute inset-0 items-center justify-center animate-in fade-in zoom-in-95 duration-150">
-                                <span className="inline-flex items-center gap-1.5 bg-white border border-slate-200 shadow-sm hover:shadow px-3 py-1 rounded-full text-xs font-semibold text-slate-700 tracking-wide transition-all group-hover/cell:scale-105">
-                                  <Plus className="w-3.5 h-3.5 text-punto-brand" />
-                                  Reservar
-                                </span>
-                              </div>
-                              {/* Mobile: alvo sutil */}
-                              <div className="sm:hidden absolute inset-0 flex items-center justify-center pointer-events-none opacity-40">
-                                <span className="w-6 h-6 rounded-full bg-slate-100 text-slate-400 flex items-center justify-center">
-                                  <Plus className="w-3.5 h-3.5" />
-                                </span>
-                              </div>
-                            </>
+                            <div className="absolute inset-0 flex items-center justify-center pointer-events-none select-none">
+                              <span className="opacity-0 group-hover:opacity-100 transition-opacity text-slate-400 text-sm font-medium">
+                                + Reservar
+                              </span>
+                            </div>
                           )}
                         </div>
                       );

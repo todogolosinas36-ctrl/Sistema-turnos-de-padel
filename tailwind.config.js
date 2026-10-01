@@ -20,6 +20,15 @@ export default {
           surface: '#F8FAFC',
         },
       },
+      keyframes: {
+        fadeIn: {
+          '0%': { opacity: '0', transform: 'translateY(2px)' },
+          '100%': { opacity: '1', transform: 'translateY(0)' },
+        },
+      },
+      animation: {
+        'fade-in': 'fadeIn 300ms cubic-bezier(0.16, 1, 0.3, 1) forwards',
+      },
     },
   },
   plugins: [tailwindcssAnimate],
