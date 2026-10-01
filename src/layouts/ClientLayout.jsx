@@ -14,6 +14,18 @@ export default function ClientLayout() {
         <main className="flex-1 flex flex-col">
           <Outlet />
         </main>
+
+        <footer className="text-xs text-slate-500 text-center py-6 mt-8 border-t border-slate-800/50">
+          20/10 • Desarrollado por MP Sistemas •{' '}
+          <a
+            href="https://wa.me/5493816096311"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="hover:text-slate-400 hover:underline transition-colors"
+          >
+            📞 3816096311
+          </a>
+        </footer>
       </div>
     </div>
   );

@@ -926,7 +926,11 @@ export default function AgendaDiaria({ fecha: fechaProp }) {
       {/* ─── Modal Cobro Inteligente (Split Payment) ─── */}
       <ModalCobro
         isOpen={!!turnoParaCobro}
-        turno={turnoParaCobro}
+        turno={
+          turnoParaCobro
+            ? turnosDelDia.find((t) => t.id === turnoParaCobro.id) || turnoParaCobro
+            : null
+        }
         onClose={() => setTurnoParaCobro(null)}
         onConfirmarCobro={async (turnoId, detalleCobro, estadoExplicito) => {
           const nuevoEstado = estadoExplicito || 'pagado';

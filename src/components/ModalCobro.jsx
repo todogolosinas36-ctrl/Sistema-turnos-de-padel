@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { useArticulos } from '../context/ArticulosContext';
 import { useTurnos } from '../context/TurnosContext';
+import { supabase } from '../lib/supabaseClient';
 import {
   X,
   Plus,
@@ -17,6 +18,10 @@ import {
   Smartphone,
   CreditCard,
   Coins,
+  Store,
+  Receipt,
+  Minus,
+  ShoppingBag,
 } from 'lucide-react';
 import { formatearMetodoPagoMixto, calcularTotalesMixtos, resolverPrecioCancha } from '../utils/paymentHelpers';
 
@@ -28,17 +33,20 @@ const METODOS_PAGO = [
 
 export default function ModalCobro({ isOpen, onClose, turno, onConfirmarCobro }) {
   const { articulos, ajustarStock } = useArticulos();
-  const { precioBaseCancha } = useTurnos();
+  const { precioBaseCancha, actualizarTurno } = useTurnos();
 
   // Monto base de la cancha: viene del turno consolidado en Supabase o de la Configuración general
   const [totalBaseCancha, setTotalBaseCancha] = useState(() =>
     resolverPrecioCancha(turno, precioBaseCancha)
   );
   const [editandoBase, setEditandoBase] = useState(false);
+  const [guardandoPrecioBase, setGuardandoPrecioBase] = useState(false);
   const [gastosCompartidos, setGastosCompartidos] = useState([]);
+  
+  // Modal de Agregar Gasto Compartido (Directo de Cantina)
   const [modalGastoCompartido, setModalGastoCompartido] = useState(false);
-  const [conceptoGasto, setConceptoGasto] = useState('');
-  const [montoGasto, setMontoGasto] = useState('');
+  const [busquedaGastoCompartido, setBusquedaGastoCompartido] = useState('');
+  const inputBusquedaGastoRef = useRef(null);
 
   // Selector de División
   const [division, setDivision] = useState(4); // 4 jugadores por defecto en pádel
@@ -95,8 +103,7 @@ export default function ModalCobro({ isOpen, onClose, turno, onConfirmarCobro })
     // Restaurar gastos compartidos si el turno ya los tenía guardados en Supabase
     setGastosCompartidos(Array.isArray(turno.gastos_compartidos) ? turno.gastos_compartidos : []);
     setModalGastoCompartido(false);
-    setConceptoGasto('');
-    setMontoGasto('');
+    setBusquedaGastoCompartido('');
     setJugadorKioscoActivo(null);
     setBusquedaKiosco('');
     setAvisoStock(null);
@@ -120,7 +127,7 @@ export default function ModalCobro({ isOpen, onClose, turno, onConfirmarCobro })
     setJugadorParaCobro(null);
     setMetodoPagoModal('efectivo');
     setMontosMixtos({ efectivo: '', transferencia: '', tarjeta: '' });
-  }, [isOpen, turno?.id, turno?.total_base_cancha, turno?.precio, precioBaseCancha]);
+  }, [isOpen, turno?.id, turno?.total_base_cancha, turno?.precio_total, turno?.precio, precioBaseCancha]);
 
   // Manejo de atajo Escape para cerrar sub-modales
   useEffect(() => {
@@ -166,20 +173,116 @@ export default function ModalCobro({ isOpen, onClose, turno, onConfirmarCobro })
   const jugadoresCobradosCount = jugadores.filter((j) => j.pagado).length;
   const todosCobrados = jugadores.length > 0 && jugadores.every((j) => j.pagado);
 
-  // Agregar gasto compartido
-  const handleAgregarGastoCompartido = (e) => {
-    e.preventDefault();
-    if (!conceptoGasto.trim() || !montoGasto) return;
-    setGastosCompartidos((prev) => [
-      ...prev,
-      {
-        id: Date.now(),
-        concepto: conceptoGasto.trim(),
-        monto: Number(montoGasto) || 0,
-      },
-    ]);
-    setConceptoGasto('');
-    setMontoGasto('');
+  // Persistir actualización del precio total / base de la cancha en Supabase y contexto
+  const guardarNuevoPrecioCancha = async (nuevoValor) => {
+    const n = Number(nuevoValor);
+    const fallback = resolverPrecioCancha(turno, precioBaseCancha);
+    const valorFinal = Number.isFinite(n) && n > 0 ? Math.round(n) : fallback;
+
+    setTotalBaseCancha(valorFinal);
+    setEditandoBase(false);
+
+    if (!turno?.id || valorFinal === null) return;
+
+    // Calcular el nuevo total general sumando extras y consumos
+    const nuevoTotal = valorFinal + totalGastosExtra + totalKioscoGeneral;
+
+    // Mutar en memoria para reactividad inmediata del turno
+    turno.total_base_cancha = valorFinal;
+    turno.precio = nuevoTotal;
+
+    setGuardandoPrecioBase(true);
+    try {
+      // 1. Sincronizar contexto y Supabase a través de actualizarTurno
+      if (typeof actualizarTurno === 'function') {
+        const res = await actualizarTurno(turno.id, {
+          total_base_cancha: valorFinal,
+          precio: nuevoTotal,
+        });
+        if (res?.id) {
+          turno.id = res.id;
+        }
+      } else {
+        // Fallback directo a Supabase
+        await supabase
+          .from('turnos')
+          .update({
+            total_base_cancha: valorFinal,
+            precio: nuevoTotal,
+          })
+          .eq('id', turno.id);
+      }
+    } catch (err) {
+      console.error('[ModalCobro] Error al persistir el nuevo precio de la cancha en Supabase:', err);
+    } finally {
+      setGuardandoPrecioBase(false);
+    }
+  };
+
+  // Abrir modal de gastos y resetear a valores iniciales
+  // Abrir modal de gastos compartidos y auto-enfocar buscador
+  const abrirModalGasto = () => {
+    setBusquedaGastoCompartido('');
+    setModalGastoCompartido(true);
+    setTimeout(() => {
+      inputBusquedaGastoRef.current?.focus();
+    }, 50);
+  };
+
+  // Filtrado de artículos de cantina en el modal de gastos
+  const articulosGastoFiltrados = useMemo(() => {
+    const q = busquedaGastoCompartido.toLowerCase().trim();
+    if (!q) return articulos;
+    return articulos.filter(
+      (a) =>
+        a.nombre.toLowerCase().includes(q) ||
+        (a.categoria && a.categoria.toLowerCase().includes(q)) ||
+        (a.codigoBarras && String(a.codigoBarras).includes(q))
+    );
+  }, [articulos, busquedaGastoCompartido]);
+
+  // Acción Directa: al hacer clic en un artículo se agrega de inmediato a los consumos/extras del turno
+  // y se recalcula automáticamente la división por jugador según el Split Payment (1, 2, 4 o 6).
+  const agregarGastoCompartidoDirecto = (articulo) => {
+    if (!articulo) return;
+
+    setGastosCompartidos((prev) => {
+      const precio = Number(articulo.precio) || 0;
+      const index = prev.findIndex((g) => g.articuloId === articulo.id);
+      if (index >= 0) {
+        return prev.map((g, idx) => {
+          if (idx !== index) return g;
+          const nuevaCant = (g.cantidad || 1) + 1;
+          return {
+            ...g,
+            cantidad: nuevaCant,
+            concepto: `${articulo.nombre} (x${nuevaCant})`,
+            nombre: articulo.nombre,
+            monto: precio * nuevaCant,
+            precioUnitario: precio,
+            articuloId: articulo.id,
+            tipo: 'cantina',
+            origen: 'cantina',
+          };
+        });
+      }
+      return [
+        ...prev,
+        {
+          id: Date.now(),
+          concepto: articulo.nombre,
+          nombre: articulo.nombre,
+          monto: precio,
+          articuloId: articulo.id,
+          cantidad: 1,
+          precioUnitario: precio,
+          tipo: 'cantina',
+          origen: 'cantina',
+        },
+      ];
+    });
+
+    setBusquedaGastoCompartido('');
     setModalGastoCompartido(false);
   };
 
@@ -220,7 +323,15 @@ export default function ModalCobro({ isOpen, onClose, turno, onConfirmarCobro })
             )
           : [
               ...jug.itemsKiosco,
-              { id: articulo.id, nombre: articulo.nombre, precio: articulo.precio, cantidad: 1 },
+              {
+                id: articulo.id,
+                articuloId: articulo.id,
+                nombre: articulo.nombre,
+                precio: Number(articulo.precio) || 0,
+                cantidad: 1,
+                tipo: 'cantina',
+                origen: 'cantina',
+              },
             ];
         return { ...jug, itemsKiosco: itemsActualizados };
       })
@@ -245,13 +356,24 @@ export default function ModalCobro({ isOpen, onClose, turno, onConfirmarCobro })
 
   // Descuenta el stock de todo lo que se cobró. Se llama UNA vez, cuando el
   // cobro se confirma, no al agregar al carrito.
-  const descontarStockCobrado = async (listaJugadores) => {
+  const descontarStockCobrado = async (listaJugadores, listaGastos = gastosCompartidos) => {
     for (const jug of listaJugadores) {
       for (const item of jug.itemsKiosco) {
+        if (item.id && articulos.some((a) => a.id === item.id)) {
+          try {
+            await ajustarStock(item.id, -(item.cantidad || 1));
+          } catch (err) {
+            console.error(`[ModalCobro] No se pudo descontar "${item.nombre}":`, err);
+          }
+        }
+      }
+    }
+    for (const gasto of listaGastos) {
+      if (gasto.articuloId && articulos.some((a) => a.id === gasto.articuloId)) {
         try {
-          await ajustarStock(item.id, -item.cantidad);
+          await ajustarStock(gasto.articuloId, -(gasto.cantidad || 1));
         } catch (err) {
-          console.error(`[ModalCobro] No se pudo descontar "${item.nombre}":`, err);
+          console.error(`[ModalCobro] No se pudo descontar gasto compartido "${gasto.concepto}":`, err);
         }
       }
     }
@@ -261,18 +383,32 @@ export default function ModalCobro({ isOpen, onClose, turno, onConfirmarCobro })
   const construirDetalleCobro = (listaJugadores) => ({
     precio: granTotalGeneral,
     total_base_cancha: totalBaseCancha,
-    gastos_compartidos: gastosCompartidos,
+    gastos_compartidos: gastosCompartidos.map((g) => ({
+      id: g.id,
+      concepto: g.concepto,
+      nombre: g.nombre || g.concepto,
+      monto: Number(g.monto) || 0,
+      cantidad: Number(g.cantidad) || 1,
+      precioUnitario: Number(g.precioUnitario) || Number(g.precio) || 0,
+      articuloId: g.articuloId || null,
+      tipo: g.tipo || (g.articuloId ? 'cantina' : 'extra'),
+      origen: g.origen || 'cantina',
+    })),
     detalle_cobro: listaJugadores.map((j) => ({
       id: j.id,
       nombre: j.nombre,
       pagado: j.pagado,
       metodo_pago: j.metodoPago,
       items: j.itemsKiosco.map((it) => ({
+        id: it.id,
+        articuloId: it.articuloId || it.id,
         nombre: it.nombre,
-        precio: it.precio,
-        cantidad: it.cantidad,
+        precio: Number(it.precio) || 0,
+        cantidad: Number(it.cantidad) || 1,
+        tipo: 'cantina',
+        origen: 'cantina',
       })),
-      subtotal_kiosco: j.itemsKiosco.reduce((s, it) => s + it.precio * (it.cantidad || 1), 0),
+      subtotal_kiosco: j.itemsKiosco.reduce((s, it) => s + (Number(it.precio) || 0) * (it.cantidad || 1), 0),
     })),
     cobrado_el: new Date().toISOString(),
   });
@@ -290,7 +426,7 @@ export default function ModalCobro({ isOpen, onClose, turno, onConfirmarCobro })
       // Si todos quedaron cobrados, liquidamos el turno automáticamente
       if (actualizados.every((j) => j.pagado)) {
         setTimeout(async () => {
-          await descontarStockCobrado(actualizados);
+          await descontarStockCobrado(actualizados, gastosCompartidos);
           onConfirmarCobro(turno.id, construirDetalleCobro(actualizados));
           onClose();
         }, 400);
@@ -306,7 +442,7 @@ export default function ModalCobro({ isOpen, onClose, turno, onConfirmarCobro })
   const cobrarTodoJunto = async () => {
     const todosPagados = jugadores.map((jug) => ({ ...jug, pagado: true }));
     setJugadores(todosPagados);
-    await descontarStockCobrado(todosPagados);
+    await descontarStockCobrado(todosPagados, gastosCompartidos);
     onConfirmarCobro(turno.id, construirDetalleCobro(todosPagados));
     onClose();
   };
@@ -394,7 +530,7 @@ export default function ModalCobro({ isOpen, onClose, turno, onConfirmarCobro })
           <div className="flex items-center gap-2 shrink-0">
             <button
               type="button"
-              onClick={() => setModalGastoCompartido(true)}
+              onClick={() => abrirModalGasto()}
               className="px-3 py-2.5 sm:py-1.5 rounded-xl border border-slate-300 bg-white hover:bg-slate-100 text-xs font-bold text-slate-700 flex items-center gap-1.5 shadow-2xs transition-colors cursor-pointer"
             >
               <Plus className="w-3.5 h-3.5 text-punto-brand shrink-0" />
@@ -418,8 +554,13 @@ export default function ModalCobro({ isOpen, onClose, turno, onConfirmarCobro })
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4">
             <div className="flex items-center gap-4 sm:gap-6 min-w-0">
               <div className="min-w-0">
-                <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400 block">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400 block flex items-center gap-1.5">
                   Total Base Cancha
+                  {guardandoPrecioBase && (
+                    <span className="text-[9px] text-amber-400 font-normal lowercase animate-pulse">
+                      (guardando...)
+                    </span>
+                  )}
                 </span>
                 {totalBaseCancha === null ? (
                   <div className="flex items-center gap-2 mt-1">
@@ -438,15 +579,13 @@ export default function ModalCobro({ isOpen, onClose, turno, onConfirmarCobro })
                       value={totalBaseCancha}
                       onChange={(e) => setTotalBaseCancha(e.target.value)}
                       onBlur={() => {
-                        const n = Number(totalBaseCancha);
-                        const fallback = resolverPrecioCancha(turno, precioBaseCancha);
-                        setTotalBaseCancha(
-                          Number.isFinite(n) && n > 0 ? Math.round(n) : fallback
-                        );
-                        setEditandoBase(false);
+                        guardarNuevoPrecioCancha(totalBaseCancha);
                       }}
                       onKeyDown={(e) => {
-                        if (e.key === 'Enter') e.currentTarget.blur();
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          guardarNuevoPrecioCancha(totalBaseCancha);
+                        }
                         if (e.key === 'Escape') {
                           setTotalBaseCancha(resolverPrecioCancha(turno, precioBaseCancha));
                           setEditandoBase(false);
@@ -460,7 +599,7 @@ export default function ModalCobro({ isOpen, onClose, turno, onConfirmarCobro })
                     type="button"
                     onClick={() => setEditandoBase(true)}
                     title="Editar el monto de la cancha para este turno"
-                    className="flex items-baseline gap-2 flex-wrap text-left active:scale-[0.98] transition-transform"
+                    className="flex items-baseline gap-2 flex-wrap text-left active:scale-[0.98] transition-transform group"
                   >
                     <span className="text-xl sm:text-2xl font-black tracking-tight text-white tabular-nums">
                       {formatearPrecio(totalBaseCancha)}
@@ -470,7 +609,7 @@ export default function ModalCobro({ isOpen, onClose, turno, onConfirmarCobro })
                         (+{formatearPrecio(totalGastosExtra)} extra)
                       </span>
                     )}
-                    <Pencil className="w-3 h-3 text-zinc-500 shrink-0" />
+                    <Pencil className="w-3 h-3 text-zinc-500 group-hover:text-zinc-300 shrink-0 transition-colors" />
                   </button>
                 )}
               </div>
@@ -520,19 +659,28 @@ export default function ModalCobro({ isOpen, onClose, turno, onConfirmarCobro })
         {/* ─── GASTOS COMPARTIDOS LISTA (Si existen) ─── */}
         {gastosCompartidos.length > 0 && (
           <div className="px-4 sm:px-6 py-2 bg-amber-50/70 border-b border-amber-200/60 flex items-center gap-3 overflow-x-auto no-scrollbar text-xs shrink-0">
-            <span className="font-bold text-amber-900 shrink-0">Gastos compartidos:</span>
+            <span className="font-bold text-amber-900 shrink-0 flex items-center gap-1">
+              <Tag className="w-3.5 h-3.5 text-amber-700 shrink-0" />
+              Gastos compartidos ({gastosCompartidos.length}):
+            </span>
             <div className="flex items-center gap-2 flex-wrap">
               {gastosCompartidos.map((gasto) => (
                 <span
                   key={gasto.id}
-                  className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-white border border-amber-300 text-amber-800 font-semibold shadow-2xs"
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white border border-amber-300 text-amber-800 font-semibold shadow-2xs text-[11px]"
                 >
+                  {gasto.articuloId ? (
+                    <Store className="w-3 h-3 text-amber-600 shrink-0" />
+                  ) : (
+                    <Receipt className="w-3 h-3 text-amber-600 shrink-0" />
+                  )}
                   <span>{gasto.concepto}:</span>
-                  <span className="font-bold">{formatearPrecio(gasto.monto)}</span>
+                  <span className="font-bold text-slate-900">{formatearPrecio(gasto.monto)}</span>
                   <button
                     type="button"
                     onClick={() => eliminarGastoCompartido(gasto.id)}
-                    className="text-amber-500 hover:text-red-600 ml-0.5 cursor-pointer"
+                    title="Eliminar gasto compartido"
+                    className="text-amber-500 hover:text-red-600 ml-0.5 cursor-pointer font-bold"
                   >
                     ×
                   </button>
@@ -582,11 +730,35 @@ export default function ModalCobro({ isOpen, onClose, turno, onConfirmarCobro })
 
                   {/* Cuerpo de la Tarjeta */}
                   <div className="p-4 space-y-3 flex-1">
-                    {/* Cuota cancha */}
-                    <div className="flex justify-between items-center text-xs text-slate-600 pb-2 border-b border-dashed border-zinc-200">
-                      <span>Cuota Cancha:</span>
-                      <span className="font-bold text-slate-900">{formatearPrecio(cuotaCanchaPorJugador)}</span>
-                    </div>
+                    {/* Cuota cancha y gastos compartidos */}
+                    {totalGastosExtra > 0 ? (
+                      <div className="space-y-1 pb-2 border-b border-dashed border-zinc-200">
+                        <div className="flex justify-between items-center text-xs text-slate-500">
+                          <span>Cancha base:</span>
+                          <span className="font-semibold text-slate-700">
+                            {formatearPrecio(Math.round((Number(totalBaseCancha) || 0) / division))}
+                          </span>
+                        </div>
+                        <div className="flex justify-between items-center text-xs text-amber-700 font-medium">
+                          <span className="flex items-center gap-1">
+                            <Tag className="w-3 h-3 text-amber-600 shrink-0" />
+                            Gastos comp. ({gastosCompartidos.length}):
+                          </span>
+                          <span className="font-bold text-amber-800">
+                            +{formatearPrecio(Math.round(totalGastosExtra / division))}
+                          </span>
+                        </div>
+                        <div className="flex justify-between items-center text-xs font-bold text-slate-900 pt-0.5">
+                          <span>Cuota Turno (c/u):</span>
+                          <span>{formatearPrecio(cuotaCanchaPorJugador)}</span>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex justify-between items-center text-xs text-slate-600 pb-2 border-b border-dashed border-zinc-200">
+                        <span>Cuota Cancha:</span>
+                        <span className="font-bold text-slate-900">{formatearPrecio(cuotaCanchaPorJugador)}</span>
+                      </div>
+                    )}
 
                     {/* Consumos de Kiosco */}
                     <div>
@@ -861,74 +1033,115 @@ export default function ModalCobro({ isOpen, onClose, turno, onConfirmarCobro })
           </div>
         )}
 
-        {/* ─── MODAL: AGREGAR GASTO COMPARTIDO ─── */}
+        {/* ─── MODAL: AGREGAR GASTO COMPARTIDO (DIRECTO CANTINA) ─── */}
         {modalGastoCompartido && (
           <div
-            className="fixed inset-0 z-[60] flex items-end sm:items-center sm:justify-center bg-slate-900/40 backdrop-blur-xs sm:p-4"
+            className="fixed inset-0 z-[60] flex items-end sm:items-center sm:justify-center bg-slate-900/60 backdrop-blur-xs sm:p-4"
             onClick={(e) => e.target === e.currentTarget && setModalGastoCompartido(false)}
           >
-            <div className="bg-white rounded-t-3xl sm:rounded-2xl shadow-2xl w-full sm:max-w-sm p-5 sm:p-6 pb-[calc(1.5rem+env(safe-area-inset-bottom,0px))] animate-in fade-in slide-in-from-bottom sm:zoom-in-95 duration-150 border border-slate-200">
-              <div className="flex items-center justify-between gap-3 mb-4">
-                <h3 className="font-black text-base text-slate-900">Agregar Gasto Compartido</h3>
+            <div className="bg-white rounded-t-3xl sm:rounded-2xl shadow-2xl w-full sm:max-w-md p-4 sm:p-5 pb-[calc(1.25rem+env(safe-area-inset-bottom,0px))] animate-in fade-in slide-in-from-bottom sm:zoom-in-95 duration-150 border border-slate-200 max-h-[85dvh] sm:max-h-[80vh] flex flex-col">
+              
+              {/* Encabezado */}
+              <div className="flex items-center justify-between gap-3 mb-3 shrink-0">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="w-8 h-8 rounded-xl bg-punto-brand/10 text-punto-brand flex items-center justify-center font-bold shrink-0">
+                    <Store className="w-4 h-4" />
+                  </div>
+                  <div className="min-w-0">
+                    <h3 className="font-black text-base text-slate-900 leading-tight truncate">
+                      Agregar Gasto Compartido
+                    </h3>
+                    <p className="text-[11px] text-slate-500 font-medium truncate">
+                      Tocá un artículo para dividirlo entre los {division} jugadores
+                    </p>
+                  </div>
+                </div>
                 <button
                   type="button"
                   onClick={() => setModalGastoCompartido(false)}
                   aria-label="Cerrar"
-                  className="w-8 h-8 rounded-lg bg-slate-100 text-slate-600 flex items-center justify-center hover:bg-slate-200 text-lg cursor-pointer shrink-0"
+                  className="w-8 h-8 rounded-lg bg-slate-100 text-slate-500 hover:text-slate-800 flex items-center justify-center hover:bg-slate-200 transition-colors cursor-pointer shrink-0"
                 >
-                  ×
+                  <X className="w-4 h-4" />
                 </button>
               </div>
 
-              <form onSubmit={handleAgregarGastoCompartido} className="space-y-3">
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
-                    Concepto
-                  </label>
-                  <input
-                    autoFocus
-                    type="text"
-                    required
-                    value={conceptoGasto}
-                    onChange={(e) => setConceptoGasto(e.target.value)}
-                    placeholder="Ej: Luz nocturna, alquiler paletas"
-                    className={modalInputCls}
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
-                    Monto ($ARS)
-                  </label>
-                  <input
-                    type="number"
-                    inputMode="numeric"
-                    min="0"
-                    step="50"
-                    required
-                    value={montoGasto}
-                    onChange={(e) => setMontoGasto(e.target.value)}
-                    placeholder="Ej: 2000"
-                    className={modalInputCls}
-                  />
-                </div>
-
-                <div className="flex gap-2 pt-2">
+              {/* Barra de búsqueda clara */}
+              <div className="relative mb-3 shrink-0">
+                <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                <input
+                  ref={inputBusquedaGastoRef}
+                  type="search"
+                  autoFocus
+                  value={busquedaGastoCompartido}
+                  onChange={(e) => setBusquedaGastoCompartido(e.target.value)}
+                  placeholder="Buscar artículo de cantina..."
+                  className="w-full pl-10 pr-9 py-2.5 sm:py-2 text-sm bg-slate-50 border border-slate-200 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-punto-brand focus:bg-white transition-all"
+                />
+                {busquedaGastoCompartido && (
                   <button
                     type="button"
-                    onClick={() => setModalGastoCompartido(false)}
-                    className="flex-1 py-3 rounded-xl border border-slate-200 text-xs font-bold text-slate-600 hover:bg-slate-50 cursor-pointer"
+                    onClick={() => setBusquedaGastoCompartido('')}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs p-1 cursor-pointer"
                   >
-                    Cancelar
+                    ✕
                   </button>
-                  <button
-                    type="submit"
-                    className="flex-1 py-3 rounded-xl bg-punto-brand text-white text-xs font-bold hover:bg-punto-hover active:scale-[0.98] transition-transform cursor-pointer"
-                  >
-                    Sumar Gasto
-                  </button>
-                </div>
-              </form>
+                )}
+              </div>
+
+              {/* Lista limpia de artículos de cantina */}
+              <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain-smooth divide-y divide-slate-100 rounded-xl border border-slate-200 bg-slate-50/50">
+                {articulosGastoFiltrados.length === 0 ? (
+                  <div className="py-12 text-center text-xs text-slate-400">
+                    No se encontraron productos en la cantina.
+                  </div>
+                ) : (
+                  articulosGastoFiltrados.map((art) => (
+                    <button
+                      key={art.id}
+                      type="button"
+                      onClick={() => agregarGastoCompartidoDirecto(art)}
+                      className="w-full text-left p-3 hover:bg-emerald-50/80 active:bg-emerald-100 transition-colors flex items-center justify-between gap-3 group cursor-pointer"
+                    >
+                      <div className="min-w-0 pr-2">
+                        <p className="text-sm font-bold text-slate-900 group-hover:text-emerald-700 truncate">
+                          {art.nombre}
+                        </p>
+                        <div className="flex items-center gap-2 mt-0.5 text-[11px] text-slate-400">
+                          <span className="font-semibold text-slate-600 bg-slate-200/80 px-1.5 py-0.2 rounded text-[10px]">
+                            {art.categoria || 'Cantina'}
+                          </span>
+                          <span className={Number(art.stock) <= 0 ? 'text-rose-500 font-semibold' : 'text-slate-500'}>
+                            Stock: {art.stock ?? 0} un.
+                          </span>
+                          {art.codigoBarras && (
+                            <span className="font-mono text-[10px] hidden sm:inline text-slate-400">
+                              #{art.codigoBarras}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2.5 shrink-0">
+                        <span className="text-sm font-black text-slate-900 group-hover:text-emerald-700 tabular-nums">
+                          {formatearPrecio(art.precio)}
+                        </span>
+                        <span className="w-7 h-7 rounded-lg bg-white border border-slate-200 group-hover:bg-emerald-600 group-hover:text-white flex items-center justify-center text-slate-500 transition-colors shadow-2xs">
+                          <Plus className="w-4 h-4" />
+                        </span>
+                      </div>
+                    </button>
+                  ))
+                )}
+              </div>
+
+              {/* Pie con indicador de división y recálculo automático */}
+              <div className="mt-3 pt-2.5 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-500 shrink-0">
+                <span>División Split Payment:</span>
+                <span className="font-bold text-slate-800">
+                  {division === 1 ? '1 solo jugador' : `Dividido entre ${division} jugadores`}
+                </span>
+              </div>
             </div>
           </div>
         )}
@@ -989,9 +1202,11 @@ export default function ModalCobro({ isOpen, onClose, turno, onConfirmarCobro })
                     <span className="text-3xl sm:text-4xl font-black text-slate-900 tracking-tight tabular-nums block">
                       {formatearPrecio(totalJugador)}
                     </span>
-                    {subtotalKiosco > 0 && (
+                    {(subtotalKiosco > 0 || totalGastosExtra > 0) && (
                       <p className="text-[11px] text-slate-500 font-medium mt-1">
-                        Cancha {formatearPrecio(cuotaCanchaPorJugador)} + Extras {formatearPrecio(subtotalKiosco)}
+                        Cancha {formatearPrecio(Math.round((Number(totalBaseCancha) || 0) / division))}
+                        {totalGastosExtra > 0 && ` + Gastos comp. ${formatearPrecio(Math.round(totalGastosExtra / division))}`}
+                        {subtotalKiosco > 0 && ` + Extras ${formatearPrecio(subtotalKiosco)}`}
                       </p>
                     )}
                   </div>

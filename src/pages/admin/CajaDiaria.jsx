@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { useTurnos } from '../../context/TurnosContext';
 import { hoyISO, normalizarHora } from '../../utils/dateHelpers';
+import { obtenerConsumoCantinaTurno, resolverMontoCanchaNeto } from '../../utils/paymentHelpers';
 
 const ETIQUETA_METODO = {
   efectivo: 'Efectivo',
@@ -79,14 +80,114 @@ export default function CajaDiaria() {
       maximumFractionDigits: 0,
     }).format(num || 0);
 
-  const totalCanchas = turnosPagados.reduce(
-    (sum, t) => sum + (Number(t.precio) || Number(t.total_base_cancha) || (precioBaseCancha || 0)),
-    0
+  /* Desglose de ingresos por turno: Alquiler neto de cancha vs Cantina sumada al turno */
+  const desgloseTurnos = useMemo(() => {
+    return turnosPagados.map((turno) => {
+      const { total: cantinaTotal, items: cantinaItems } = obtenerConsumoCantinaTurno(turno);
+      const montoCanchaNeto = resolverMontoCanchaNeto(turno, precioBaseCancha);
+      const montoTotalTurno = montoCanchaNeto + cantinaTotal;
+
+      return {
+        turno,
+        montoCanchaNeto,
+        cantinaTotal,
+        cantinaItems,
+        montoTotalTurno,
+      };
+    });
+  }, [turnosPagados, precioBaseCancha]);
+
+  // Ingresos netos por Alquiler de Canchas (exclusivo de canchas, sin cantina)
+  const totalCanchas = useMemo(
+    () => desgloseTurnos.reduce((sum, d) => sum + d.montoCanchaNeto, 0),
+    [desgloseTurnos]
   );
-  const totalCantina = ventas.reduce((sum, v) => sum + (Number(v.total) || 0), 0);
+
+  // Cantina vendida en mostrador (ventas_cantina en Supabase)
+  const totalCantinaMostrador = useMemo(
+    () => ventas.reduce((sum, v) => sum + (Number(v.total) || 0), 0),
+    [ventas]
+  );
+
+  // Cantina vendida a través de turnos (gastos compartidos y consumos de kiosco)
+  const totalCantinaTurnos = useMemo(
+    () => desgloseTurnos.reduce((sum, d) => sum + d.cantinaTotal, 0),
+    [desgloseTurnos]
+  );
+
+  // Ingresos totales de Cantina (Mostrador + Turnos)
+  const totalCantina = totalCantinaMostrador + totalCantinaTurnos;
+
+  // Recaudación Total General = Canchas Netas + Total Cantina
   const totalGeneral = totalCanchas + totalCantina;
+
   const cantidadTurnosPagados = turnosPagados.length;
-  const unidadesCantina = ventas.reduce((sum, v) => sum + (Number(v.cantidad_items) || 0), 0);
+
+  // Unidades físicas de productos de cantina vendidas
+  const unidadesCantinaMostrador = useMemo(
+    () => ventas.reduce((sum, v) => sum + (Number(v.cantidad_items) || 0), 0),
+    [ventas]
+  );
+  const unidadesCantinaTurnos = useMemo(
+    () =>
+      desgloseTurnos.reduce(
+        (sum, d) => sum + d.cantinaItems.reduce((acc, it) => acc + (Number(it.cantidad) || 1), 0),
+        0
+      ),
+    [desgloseTurnos]
+  );
+  const unidadesCantinaTotal = unidadesCantinaMostrador + unidadesCantinaTurnos;
+
+  // Lista detallada de consumos de cantina en turnos para el historial
+  const itemsCantinaTurnos = useMemo(() => {
+    return desgloseTurnos
+      .filter((d) => d.cantinaTotal > 0)
+      .map((d) => {
+        const t = d.turno;
+        const nombreCancha = t.cancha_nombre || t.cancha || 'Cancha';
+        const hora = t.hora_inicio?.slice(0, 5) || 'Turno';
+        const cliente = `${t.cliente_nombre || ''} ${t.cliente_apellido || ''}`.trim() || 'Cliente';
+        const detalle = d.cantinaItems
+          .map((it) => `${it.cantidad}x ${it.nombre}`)
+          .join(', ');
+
+        return {
+          id: `turno-${t.id}`,
+          tipo: 'turno',
+          ticket: `Turno ${hora}`,
+          hora: t.hora_inicio || '00:00',
+          horaTexto: hora,
+          cliente,
+          nombreCancha,
+          metodo_pago: 'En Turno',
+          detalle: detalle || `${d.cantinaItems.length} artículos`,
+          total: d.cantinaTotal,
+          cantidad_items: d.cantinaItems.reduce((acc, it) => acc + (Number(it.cantidad) || 1), 0),
+        };
+      });
+  }, [desgloseTurnos]);
+
+  // Lista unificada de todas las ventas de cantina (Mostrador + Turnos) ordenadas cronológicamente
+  const todasLasVentasCantina = useMemo(() => {
+    const mostrador = ventas.map((v) => ({
+      id: `pos-${v.id}`,
+      tipo: 'mostrador',
+      ticket: v.ticket || `#${v.id.slice(0, 6)}`,
+      hora: v.hora || '00:00',
+      horaTexto: normalizarHora(v.hora),
+      metodo_pago: v.metodo_pago,
+      detalle:
+        (v.ventas_cantina_detalle || [])
+          .map((d) => `${d.cantidad}x ${d.nombre}`)
+          .join(', ') || `${v.cantidad_items} artículos`,
+      total: Number(v.total) || 0,
+      cantidad_items: Number(v.cantidad_items) || 0,
+    }));
+
+    return [...mostrador, ...itemsCantinaTurnos].sort((a, b) =>
+      (a.hora || '').localeCompare(b.hora || '')
+    );
+  }, [ventas, itemsCantinaTurnos]);
 
   const handleImprimir = () => {
     window.print();
@@ -184,12 +285,12 @@ export default function CajaDiaria() {
               {formatearMonto(totalCanchas)}
             </span>
             <p className="text-xs text-slate-500 mt-2 font-medium">
-              {cantidadTurnosPagados} turno{cantidadTurnosPagados !== 1 ? 's' : ''} cobrado{cantidadTurnosPagados !== 1 ? 's' : ''} (estado: &quot;pagado&quot;)
+              {cantidadTurnosPagados} turno{cantidadTurnosPagados !== 1 ? 's' : ''} cobrado{cantidadTurnosPagados !== 1 ? 's' : ''} · Alquiler neto
             </p>
           </div>
         </div>
 
-        {/* Tarjeta 3 (Cantina) */}
+        {/* Tarjeta 3 (Cantina — Mostrador + Turnos) */}
         <div className="bg-white border border-zinc-200 rounded-2xl p-5 sm:p-6 shadow-sm flex flex-col justify-between">
           <div className="flex items-center justify-between gap-2">
             <span className="text-[11px] sm:text-xs font-black tracking-wider text-emerald-600/90 uppercase">
@@ -203,11 +304,16 @@ export default function CajaDiaria() {
             <span className="text-3xl sm:text-4xl font-black tracking-tight text-emerald-600 block tabular-nums">
               {formatearMonto(totalCantina)}
             </span>
-            <p className="text-xs text-slate-500 mt-2 font-medium">
-              {ventas.length === 0
-                ? 'Sin ventas en mostrador hoy'
-                : `${ventas.length} ticket${ventas.length !== 1 ? 's' : ''} · ${unidadesCantina} unidades`}
-            </p>
+            <div className="text-xs text-slate-500 mt-2 font-medium flex flex-col gap-0.5">
+              <span>
+                {todasLasVentasCantina.length === 0
+                  ? 'Sin ventas de cantina hoy'
+                  : `${todasLasVentasCantina.length} ventas · ${unidadesCantinaTotal} unidades`}
+              </span>
+              <span className="text-[11px] text-slate-400">
+                Mostrador: {formatearMonto(totalCantinaMostrador)} · En Turnos: {formatearMonto(totalCantinaTurnos)}
+              </span>
+            </div>
           </div>
         </div>
       </div>
@@ -236,7 +342,7 @@ export default function CajaDiaria() {
           </div>
 
           <div className="divide-y divide-zinc-100 flex-1 overflow-y-auto overscroll-contain-smooth max-h-[460px]">
-            {turnosPagados.length === 0 ? (
+            {desgloseTurnos.length === 0 ? (
               <div className="py-12 flex flex-col items-center justify-center text-center px-6">
                 <CalendarDays className="w-10 h-10 text-slate-300 stroke-1 mb-2" />
                 <p className="font-bold text-slate-700 text-sm">Sin turnos cobrados hoy</p>
@@ -245,52 +351,60 @@ export default function CajaDiaria() {
                 </p>
               </div>
             ) : (
-              turnosPagados.map((turno) => {
+              desgloseTurnos.map(({ turno, montoCanchaNeto, cantinaTotal }) => {
                 const nombreCancha = turno.cancha_nombre || turno.cancha || 'Cancha';
-                const montoCobrado = Number(turno.precio) || Number(turno.total_base_cancha) || (precioBaseCancha || 0);
                 const esRoja = nombreCancha.toLowerCase().includes('roja');
 
                 return (
-                <div
-                  key={turno.id}
-                  className="py-3.5 flex items-center justify-between gap-3 sm:gap-4 hover:bg-slate-50/70 px-2 rounded-lg transition-colors"
-                >
-                  <div className="flex items-center gap-3 min-w-0">
-                    <div className="w-10 h-10 rounded-lg bg-slate-100 flex items-center justify-center text-xs font-black text-slate-700 shrink-0">
-                      <Clock className="w-3.5 h-3.5 mr-0.5 text-slate-500" />
-                      {turno.hora_inicio?.slice(0, 5)}
+                  <div
+                    key={turno.id}
+                    className="py-3.5 flex items-center justify-between gap-3 sm:gap-4 hover:bg-slate-50/70 px-2 rounded-lg transition-colors"
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="w-10 h-10 rounded-lg bg-slate-100 flex items-center justify-center text-xs font-black text-slate-700 shrink-0">
+                        <Clock className="w-3.5 h-3.5 mr-0.5 text-slate-500" />
+                        {turno.hora_inicio?.slice(0, 5)}
+                      </div>
+                      <div className="min-w-0">
+                        <p className="font-bold text-slate-900 text-sm truncate">
+                          {turno.cliente_nombre} {turno.cliente_apellido}
+                        </p>
+                        <div className="flex items-center gap-2 text-xs text-slate-400 mt-0.5">
+                          <span
+                            className={`inline-block w-2 h-2 rounded-full shrink-0 ${
+                              esRoja ? 'bg-red-500' : 'bg-green-500'
+                            }`}
+                          />
+                          <span className="truncate">{nombreCancha}</span>
+                          <span>•</span>
+                          <span className="text-blue-600 font-semibold">Alquiler Cancha</span>
+                        </div>
+                      </div>
                     </div>
-                    <div className="min-w-0">
-                      <p className="font-bold text-slate-900 text-sm truncate">
-                        {turno.cliente_nombre} {turno.cliente_apellido}
-                      </p>
-                      <div className="flex items-center gap-2 text-xs text-slate-400 mt-0.5">
-                        <span className={`inline-block w-2 h-2 rounded-full shrink-0 ${
-                          esRoja ? 'bg-red-500' : 'bg-green-500'
-                        }`} />
-                        <span className="truncate">{nombreCancha}</span>
-                        <span>•</span>
-                        <span className="text-emerald-600 font-semibold">Agenda → Caja</span>
+
+                    <div className="text-right shrink-0">
+                      <span className="font-black text-sm text-slate-900 block tabular-nums">
+                        {formatearMonto(montoCanchaNeto)}
+                      </span>
+                      <div className="flex items-center justify-end gap-1.5 mt-0.5">
+                        {cantinaTotal > 0 && (
+                          <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200/60 px-1.5 py-0.5 rounded">
+                            +{formatearMonto(cantinaTotal)} Cantina
+                          </span>
+                        )}
+                        <span className="text-[11px] font-bold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded">
+                          Cobrado
+                        </span>
                       </div>
                     </div>
                   </div>
-
-                  <div className="text-right shrink-0">
-                    <span className="font-black text-sm text-slate-900 block tabular-nums">
-                      {formatearMonto(montoCobrado)}
-                    </span>
-                    <span className="text-[11px] font-bold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded">
-                      Cobrado
-                    </span>
-                  </div>
-                </div>
                 );
               })
             )}
           </div>
         </div>
 
-        {/* Columna Derecha (Cantina) */}
+        {/* Columna Derecha (Cantina — Mostrador + Turnos) */}
         <div className="bg-white rounded-2xl border border-zinc-200 p-4 sm:p-6 shadow-sm flex flex-col">
           <div className="flex items-center justify-between gap-3 pb-4 border-b border-zinc-100">
             <div className="flex items-center gap-2.5 min-w-0">
@@ -302,7 +416,7 @@ export default function CajaDiaria() {
               </h2>
             </div>
             <span className="text-xs font-bold text-slate-400 bg-slate-100 px-2.5 py-1 rounded-md shrink-0">
-              {ventas.length} ticket{ventas.length !== 1 ? 's' : ''}
+              {todasLasVentasCantina.length} venta{todasLasVentasCantina.length !== 1 ? 's' : ''} ({ventas.length} mostrador · {itemsCantinaTurnos.length} en turnos)
             </span>
           </div>
 
@@ -312,19 +426,17 @@ export default function CajaDiaria() {
                 <div className="w-6 h-6 border-[3px] border-slate-200 border-t-slate-900 rounded-full animate-spin" />
                 <p className="text-xs text-slate-400 font-medium">Cargando…</p>
               </div>
-            ) : ventas.length === 0 ? (
+            ) : todasLasVentasCantina.length === 0 ? (
               <div className="py-12 flex flex-col items-center justify-center text-center px-6">
                 <CoffeeIcon className="w-10 h-10 text-slate-300 stroke-1 mb-2" />
-                <p className="font-bold text-slate-700 text-sm">Sin ventas de cantina</p>
+                <p className="font-bold text-slate-700 text-sm">Sin ventas de cantina hoy</p>
                 <p className="text-xs text-slate-400 mt-1 max-w-xs">
-                  Las ventas cobradas en el mostrador (POS) aparecen acá.
+                  Las ventas cobradas en el mostrador (POS) o agregadas a los turnos aparecen acá.
                 </p>
               </div>
             ) : (
-              ventas.map((item) => {
-                const detalle = (item.ventas_cantina_detalle || [])
-                  .map((d) => `${d.cantidad}x ${d.nombre}`)
-                  .join(', ');
+              todasLasVentasCantina.map((item) => {
+                const esDeTurno = item.tipo === 'turno';
 
                 return (
                   <div
@@ -334,26 +446,39 @@ export default function CajaDiaria() {
                     <div className="flex items-center gap-3 min-w-0">
                       <div className="w-10 h-10 rounded-lg bg-slate-100 flex items-center justify-center text-xs font-black text-slate-700 shrink-0">
                         <Clock className="w-3.5 h-3.5 mr-0.5 text-slate-500" />
-                        {normalizarHora(item.hora)}
+                        {item.horaTexto}
                       </div>
                       <div className="min-w-0">
-                        <div className="flex items-center gap-2">
-                          <p className="font-bold text-slate-900 text-sm font-mono truncate">
-                            {item.ticket || `#${item.id.slice(0, 6)}`}
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <p className="font-bold text-slate-900 text-sm truncate">
+                            {esDeTurno
+                              ? `${item.ticket} · ${item.cliente}`
+                              : item.ticket}
                           </p>
                           <span
-                            title={item.metodo_pago}
-                            className={`text-[10px] font-semibold px-1.5 py-0.5 rounded shrink-0 ${
-                              item.metodo_pago?.startsWith('Mixto')
-                                ? 'bg-purple-100 text-purple-700 font-bold'
-                                : 'text-slate-500 bg-zinc-100'
+                            className={`text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0 ${
+                              esDeTurno
+                                ? 'bg-indigo-50 text-indigo-700 border border-indigo-200/50'
+                                : 'bg-emerald-50 text-emerald-700 border border-emerald-200/50'
                             }`}
                           >
-                            {ETIQUETA_METODO[item.metodo_pago] || item.metodo_pago}
+                            {esDeTurno ? `En Turno (${item.nombreCancha})` : 'Mostrador (POS)'}
                           </span>
+                          {!esDeTurno && item.metodo_pago && (
+                            <span
+                              title={item.metodo_pago}
+                              className={`text-[10px] font-semibold px-1.5 py-0.5 rounded shrink-0 ${
+                                item.metodo_pago?.startsWith('Mixto')
+                                  ? 'bg-purple-100 text-purple-700 font-bold'
+                                  : 'text-slate-500 bg-zinc-100'
+                              }`}
+                            >
+                              {ETIQUETA_METODO[item.metodo_pago] || item.metodo_pago}
+                            </span>
+                          )}
                         </div>
                         <p className="text-xs text-slate-500 mt-0.5 truncate">
-                          {detalle || `${item.cantidad_items} artículos`}
+                          {item.detalle}
                         </p>
                       </div>
                     </div>
@@ -409,15 +534,19 @@ export default function CajaDiaria() {
 
             <div className="bg-slate-50 rounded-xl p-4 border border-slate-200 space-y-2 text-sm text-slate-700 my-4">
               <div className="flex justify-between">
-                <span className="text-slate-500">Turnos de Canchas ({cantidadTurnosPagados}):</span>
+                <span className="text-slate-500">Alquiler Canchas ({cantidadTurnosPagados} turnos):</span>
                 <span className="font-bold text-slate-900">{formatearMonto(totalCanchas)}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-slate-500">Ventas de Cantina ({ventas.length}):</span>
+                <span className="text-slate-500">Ventas Cantina ({todasLasVentasCantina.length} tickets):</span>
                 <span className="font-bold text-slate-900">{formatearMonto(totalCantina)}</span>
               </div>
+              <div className="pl-3 text-xs text-slate-500 flex justify-between">
+                <span>• Mostrador: {formatearMonto(totalCantinaMostrador)}</span>
+                <span>• En Turnos: {formatearMonto(totalCantinaTurnos)}</span>
+              </div>
               <div className="pt-2 border-t border-slate-200 flex justify-between text-base font-black">
-                <span>Total Arquillado:</span>
+                <span>Total Arqueado:</span>
                 <span className="text-red-600">{formatearMonto(totalGeneral)}</span>
               </div>
             </div>

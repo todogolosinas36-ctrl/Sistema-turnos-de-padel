@@ -402,6 +402,91 @@ export function TurnosProvider({ children }) {
     [modoLocal, turnosFijos]
   );
 
+  const actualizarTurno = useCallback(
+    async (id, campos = {}) => {
+      if (typeof id === 'string' && id.startsWith('fijo::')) {
+        const [, abonoId, fechaISO] = id.split('::');
+        const abono = turnosFijos.find((tf) => String(tf.id) === String(abonoId));
+
+        if (abono) {
+          const partesCliente = (abono.cliente || '').trim().split(' ');
+          const tokenCancelacion = abono.token_cancelacion || crypto.randomUUID();
+          const override = {
+            ...camposTurno({
+              ...abono,
+              fecha: fechaISO,
+              cliente_nombre: partesCliente[0] || 'Abonado',
+              cliente_apellido: partesCliente.slice(1).join(' ') || '(Abono)',
+              cliente_telefono: '',
+              estado: 'confirmado',
+              es_fijo: true,
+              turno_fijo_id: abono.id,
+              origen: 'admin',
+              token_cancelacion: tokenCancelacion,
+            }),
+            token_cancelacion: tokenCancelacion,
+            ...campos,
+          };
+
+          let fila;
+          if (modoLocal) {
+            fila = { ...override, id: crypto.randomUUID(), creado_el: new Date().toISOString() };
+          } else {
+            const { data, error } = await supabase
+              .from('turnos')
+              .insert([override])
+              .select()
+              .single();
+            if (error) {
+              console.error('[Turnos] No se pudo materializar el abono para actualizar:', error.message);
+              setFalla((prev) => prev || clasificarErrorSupabase(error));
+              fila = { ...override, id: crypto.randomUUID(), creado_el: new Date().toISOString() };
+            } else {
+              fila = data;
+            }
+          }
+
+          setTurnos((prev) => [...prev, normalizarTurno(fila)]);
+          return fila;
+        }
+      }
+
+      if (modoLocal) {
+        setTurnos((prev) =>
+          prev.map((t) => (t.id === id ? { ...t, ...campos } : t))
+        );
+        return null;
+      }
+
+      const datosAActualizar = { ...campos };
+      if ('token_cancelacion' in datosAActualizar && !datosAActualizar.token_cancelacion) {
+        delete datosAActualizar.token_cancelacion;
+      }
+
+      const { data, error } = await supabase
+        .from('turnos')
+        .update(datosAActualizar)
+        .eq('id', id)
+        .select()
+        .single();
+
+      if (error) {
+        console.error('[Turnos] No se pudo actualizar el turno:', error.message);
+        setFalla((prev) => prev || clasificarErrorSupabase(error));
+        setTurnos((prev) =>
+          prev.map((t) => (t.id === id ? { ...t, ...campos } : t))
+        );
+        return null;
+      }
+
+      if (data) {
+        setTurnos((prev) => prev.map((t) => (t.id === id ? normalizarTurno(data) : t)));
+      }
+      return data;
+    },
+    [modoLocal, turnosFijos]
+  );
+
   const eliminarTurno = useCallback(
     async (id) => {
       if (!modoLocal) {
@@ -640,6 +725,7 @@ export function TurnosProvider({ children }) {
 
         // turnos
         agregarTurno,
+        actualizarTurno,
         cambiarEstado,
         eliminarTurno,
         obtenerTurnosDelDia,

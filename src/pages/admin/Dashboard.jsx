@@ -14,6 +14,7 @@ import {
 import StatCard from '../../components/admin/StatCard';
 import { useTurnos } from '../../context/TurnosContext';
 import { hoyISO, sumarDias, normalizarHora } from '../../utils/dateHelpers';
+import { obtenerConsumoCantinaTurno, resolverMontoCanchaNeto } from '../../utils/paymentHelpers';
 
 const formatearMonto = (n) =>
   new Intl.NumberFormat('es-AR', {
@@ -65,17 +66,23 @@ export default function Dashboard() {
     const ocupacion = capacidad > 0 ? Math.round((minutosOcupados / capacidad) * 100) : 0;
 
     const cobradoCanchas = pagados.reduce(
-      (s, t) => s + (Number(t.precio) || Number(t.total_base_cancha) || precioBaseCancha || 0),
+      (s, t) => s + resolverMontoCanchaNeto(t, precioBaseCancha),
       0
     );
-    const cobradoCantina = ventas.reduce((s, v) => s + (Number(v.total) || 0), 0);
+    const cantinaEnTurnos = pagados.reduce(
+      (s, t) => s + obtenerConsumoCantinaTurno(t).total,
+      0
+    );
+    const cobradoCantina =
+      ventas.reduce((s, v) => s + (Number(v.total) || 0), 0) + cantinaEnTurnos;
 
     const ingresosAyer = delDiaAyer
       .filter((t) => t.estado === 'pagado')
-      .reduce(
-        (s, t) => s + (Number(t.precio) || Number(t.total_base_cancha) || precioBaseCancha || 0),
-        0
-      );
+      .reduce((s, t) => {
+        const canchasNeto = resolverMontoCanchaNeto(t, precioBaseCancha);
+        const cantinaTurno = obtenerConsumoCantinaTurno(t).total;
+        return s + canchasNeto + cantinaTurno;
+      }, 0);
 
     const variacion =
       ingresosAyer > 0
