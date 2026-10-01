@@ -107,7 +107,7 @@ const camposTurno = (t) => ({
   origen: t.origen || 'admin',
   es_fijo: Boolean(t.es_fijo),
   notas: t.notas || null,
-  token_cancelacion: t.token_cancelacion || null,
+  token_cancelacion: t.token_cancelacion || crypto.randomUUID(),
   motivo_cancelacion: t.motivo_cancelacion || null,
   cancelado_el: t.cancelado_el || null,
   turno_fijo_id: t.turno_fijo_id || null,
@@ -281,6 +281,7 @@ export function TurnosProvider({ children }) {
 
         if (abono) {
           const partesCliente = (abono.cliente || '').trim().split(' ');
+          const tokenCancelacion = abono.token_cancelacion || crypto.randomUUID();
           const override = {
             ...camposTurno({
               ...abono,
@@ -292,7 +293,9 @@ export function TurnosProvider({ children }) {
               es_fijo: true,
               turno_fijo_id: abono.id,
               origen: 'admin',
+              token_cancelacion: tokenCancelacion,
             }),
+            token_cancelacion: tokenCancelacion,
             ...extra,
           };
 
@@ -326,9 +329,20 @@ export function TurnosProvider({ children }) {
         return null;
       }
 
+      // Para turnos ya existentes, usamos estrictamente .update().eq('id', id)
+      // para que Supabase solo modifique las columnas deseadas sin exigir campos de inserción
+      const datosAActualizar = {
+        estado: nuevoEstado,
+        ...extra,
+      };
+
+      if ('token_cancelacion' in datosAActualizar && !datosAActualizar.token_cancelacion) {
+        delete datosAActualizar.token_cancelacion;
+      }
+
       const { data, error } = await supabase
         .from('turnos')
-        .update({ estado: nuevoEstado, ...extra })
+        .update(datosAActualizar)
         .eq('id', id)
         .select()
         .single();

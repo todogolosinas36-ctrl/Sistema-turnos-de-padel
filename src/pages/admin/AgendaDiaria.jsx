@@ -742,14 +742,13 @@ export default function AgendaDiaria({ fecha: fechaProp }) {
         isOpen={!!turnoParaCobro}
         turno={turnoParaCobro}
         onClose={() => setTurnoParaCobro(null)}
-        onConfirmarCobro={(turnoId, detalleCobro) => {
-          // El 2º argumento trae el monto real, los gastos compartidos y el
-          // split por jugador. Antes se descartaba y la Caja no tenía forma
-          // de conocer lo cobrado.
+        onConfirmarCobro={async (turnoId, detalleCobro) => {
           setTurnoParaCobro(null);
-          cambiarEstado(turnoId, 'pagado', detalleCobro || {}).catch((err) => {
+          try {
+            await cambiarEstado(turnoId, 'pagado', detalleCobro || {});
+          } catch (err) {
             console.error('[Agenda] No se pudo registrar el cobro:', err);
-          });
+          }
         }}
       />
     </div>
