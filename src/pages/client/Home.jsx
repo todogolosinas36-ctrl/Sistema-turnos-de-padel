@@ -58,7 +58,8 @@ export default function Home() {
   const [fecha, setFecha] = useState(hoyISO);
   const [duracion, setDuracion] = useState(90);
   const [reservaActiva, setReservaActiva] = useState(null);
-  const [turnoLiberadoAviso, setTurnoLiberadoAviso] = useState(false);
+  const ultimosTurnosOcupadosRef = useRef(null);
+  const [cartelLateralVisible, setCartelLateralVisible] = useState(false);
   const [mostrarAvisoLiberacion, setMostrarAvisoLiberacion] = useState(false);
   const [datosEspera, setDatosEspera] = useState({ nombre: '', telefono: '', rango: '' });
 
@@ -123,47 +124,49 @@ export default function Home() {
     }
   }, [reservaActiva, miIdTemporal]);
 
-  // Escuchar cancelaciones para mostrar el Toast persistente
+  // 1. Escucha Realtime directa
   useEffect(() => {
-    const canalId = `cliente-alertas-${Math.random().toString(36).substring(2, 7)}`;
-    
     const canal = supabase
-      .channel(canalId)
+      .channel(`cliente-sync-${Date.now()}`)
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'turnos' },
         (payload) => {
-          console.log('📡 [CLIENTE REALTIME] Evento detectado:', payload.eventType, payload);
-
-          // CASO 1: Turno borrado (DELETE) -> Se liberó un espacio
-          if (payload.eventType === 'DELETE') {
-            console.log('🟢 Turno eliminado detectado, activando Toast...');
-            setTurnoLiberadoAviso(true);
-          }
-          
-          // CASO 2: Turno actualizado (UPDATE) a cancelado o disponible
-          else if (payload.eventType === 'UPDATE') {
-            const estado = payload.new?.estado?.toLowerCase();
-            const estadoAnterior = payload.old?.estado?.toLowerCase();
-            
-            if (
-              estado === 'cancelado' || 
-              estado === 'disponible' || 
-              (estadoAnterior === 'confirmado' && !payload.new?.titular)
-            ) {
-              console.log('🟢 Turno cancelado detectado, activando Toast...');
-              setTurnoLiberadoAviso(true);
-            }
+          console.log('🚨 CAMBIO DETECTADO EN TURNOS:', payload);
+          // Si borraron un turno o cancelaron uno
+          if (payload.eventType === 'DELETE' || payload.new?.estado === 'cancelado') {
+            setCartelLateralVisible(true);
           }
         }
       )
-      .subscribe((status, error) => {
-        console.log(`🔌 [CLIENTE REALTIME] Estado conexión: ${status}`);
-        if (error) console.error('Error suscripción cliente:', error);
-      });
+      .subscribe();
+
+    // 2. Respaldo: Polling de chequeo rápido cada 8 segundos
+    const intervalo = setInterval(async () => {
+      try {
+        const { data, error } = await supabase
+          .from('turnos')
+          .select('id, estado')
+          .neq('estado', 'cancelado');
+
+        if (!error && data) {
+          if (ultimosTurnosOcupadosRef.current !== null) {
+            // Si antes había más turnos ocupados que ahora -> SE LIBERÓ UNO
+            if (data.length < ultimosTurnosOcupadosRef.current) {
+              console.log('🔔 Turno liberado detectado por sincronización de fondo');
+              setCartelLateralVisible(true);
+            }
+          }
+          ultimosTurnosOcupadosRef.current = data.length;
+        }
+      } catch (err) {
+        console.error('Error sincronizando turnos:', err);
+      }
+    }, 8000);
 
     return () => {
       supabase.removeChannel(canal);
+      clearInterval(intervalo);
     };
   }, []);
 
@@ -239,33 +242,54 @@ export default function Home() {
   return (
     <div className="flex flex-col w-full pb-20 text-slate-100">
       
-      {/* Toast de Oportunidad (Realtime) */}
-      {turnoLiberadoAviso && typeof document !== 'undefined' && createPortal(
-        <aside aria-label="Notificación de disponibilidad" className="fixed top-4 right-4 z-[999999] w-[calc(100%-2rem)] max-w-sm rounded-2xl bg-slate-900 border-2 border-emerald-500 p-4 text-white shadow-2xl backdrop-blur-xl animate-in fade-in slide-in-from-top-4 duration-300">
-          <div className="flex items-start gap-3">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-500/20 text-emerald-400 text-xl">
-              🎾
-            </div>
-            <div className="flex-1">
-              <h4 className="font-bold text-sm text-emerald-400">¡Se liberó un turno!</h4>
-              <p className="text-xs text-slate-300 mt-1">
-                Hay nuevos horarios disponibles. Actualiza la lista para verlos.
-              </p>
-              <button
-                onClick={() => {
-                  if (recargar) recargar();
-                  setTurnoLiberadoAviso(false);
-                }}
-                className="mt-3 inline-flex items-center justify-center w-full rounded-lg bg-emerald-500 px-3 py-2 text-xs font-semibold text-slate-950 hover:bg-emerald-400 transition-colors shadow-lg shadow-emerald-500/20 cursor-pointer"
-              >
-                Actualizar disponibilidad
-              </button>
+      {/* Panel Lateral de Oportunidad (Dual Strategy) */}
+      {cartelLateralVisible && typeof document !== 'undefined' && createPortal(
+        <aside 
+          aria-label="Notificación de disponibilidad" 
+          className="fixed top-0 right-0 z-[999999] h-full w-full sm:w-96 bg-slate-900 border-l-4 border-emerald-500 shadow-2xl flex flex-col animate-in slide-in-from-right duration-300"
+        >
+          <div className="flex items-center justify-between p-6 border-b border-slate-800 bg-slate-900/50">
+            <div className="flex items-center gap-3">
+              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-emerald-500/20 text-emerald-400 text-2xl">
+                🎾
+              </div>
+              <div>
+                <h4 className="font-black text-lg text-emerald-400 uppercase tracking-wide">¡Turno Liberado!</h4>
+                <p className="text-xs font-semibold text-slate-400">Nuevos horarios disponibles</p>
+              </div>
             </div>
             <button
-              onClick={() => setTurnoLiberadoAviso(false)}
-              className="text-slate-400 hover:text-white p-1 cursor-pointer"
+              onClick={() => setCartelLateralVisible(false)}
+              className="text-slate-400 hover:text-white p-2 rounded-lg hover:bg-slate-800 transition-colors cursor-pointer"
             >
-              ✕
+              <X className="w-6 h-6" />
+            </button>
+          </div>
+          
+          <div className="p-6 flex-1 flex flex-col justify-center">
+            <div className="bg-slate-800/50 p-6 rounded-2xl border border-slate-700/50 text-center mb-6 shadow-inner">
+              <p className="text-sm text-slate-300 leading-relaxed font-medium">
+                Alguien acaba de cancelar su reserva. 
+                <br/><br/>
+                <span className="text-emerald-400 font-bold text-base">¡Es tu oportunidad!</span>
+                <br/> Actualizá la grilla para ver si puedes aprovechar este horario.
+              </p>
+            </div>
+            
+            <button
+              onClick={() => {
+                if (recargar) recargar();
+                setCartelLateralVisible(false);
+              }}
+              className="w-full rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 px-6 py-4 text-sm font-black uppercase tracking-wider transition-colors shadow-lg shadow-emerald-500/20 active:scale-95 cursor-pointer"
+            >
+              Actualizar Grilla Ahora
+            </button>
+            <button
+              onClick={() => setCartelLateralVisible(false)}
+              className="w-full mt-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 px-6 py-4 text-sm font-bold transition-colors cursor-pointer"
+            >
+              Ignorar
             </button>
           </div>
         </aside>,
@@ -453,7 +477,7 @@ export default function Home() {
                                 ? undefined
                                 : () => {
                                     setReservaActiva({ cancha, fecha, horaInicio: bloque, duracion });
-                                    setTurnoLiberadoAviso(false);
+                                    setCartelLateralVisible(false);
                                   }
                             }
                             className={
