@@ -296,15 +296,7 @@ export default function Cantina() {
       <div className="lg:w-[62%] flex flex-col min-w-0 min-h-0">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4">
           <div className="min-w-0">
-            <div className="flex items-center gap-2 flex-wrap">
-              <h2 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
-                Cantina &amp; Pro-Shop
-              </h2>
-              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-blue-50 text-blue-700 border border-blue-200/60">
-                <Sparkles className="w-3 h-3" />
-                POS Rápido
-              </span>
-            </div>
+            
             <p className="text-xs text-slate-500 font-medium mt-0.5">
               Teclas <span className="font-bold text-slate-700">[1]</span>–
               <span className="font-bold text-slate-700">[9]</span> para agregar,{' '}
@@ -411,7 +403,7 @@ export default function Cantina() {
               </p>
             </div>
           ) : (
-            <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
+            <div className="flex flex-col gap-2 pb-6">
               {productosFiltrados.map((prod, indice) => {
                 const sinStock = (Number(prod.stock) || 0) <= 0;
                 return (
@@ -420,39 +412,41 @@ export default function Cantina() {
                     type="button"
                     onClick={() => agregarProducto(prod)}
                     disabled={sinStock}
-                    className={`group relative bg-white rounded-xl border border-zinc-200 p-4 text-left flex flex-col justify-between select-none active:scale-[0.98] transition-all ${
+                    className={`group relative bg-white rounded-xl border border-zinc-200 p-3 text-left flex items-center justify-between select-none active:scale-[0.98] transition-all ${
                       sinStock
                         ? 'opacity-50 cursor-not-allowed'
-                        : 'hover:border-blue-500 hover:shadow-md cursor-pointer'
+                        : 'hover:border-blue-500 hover:shadow-sm cursor-pointer'
                     }`}
                   >
-                    <div className="flex items-start justify-between gap-2">
-                      <span className="text-[10px] font-bold tracking-wider text-slate-400 uppercase truncate">
-                        {prod.categoria}
-                      </span>
+                    <div className="flex items-center gap-3 min-w-0 flex-1 pr-3">
                       {indice < 9 && (
                         <span
-                          className="inline-flex items-center justify-center px-1.5 py-0.5 text-[11px] font-black text-slate-500 bg-zinc-100 group-hover:bg-blue-50 group-hover:text-blue-600 border border-zinc-200 group-hover:border-blue-200 rounded-md transition-colors font-mono shadow-xs shrink-0"
+                          className="inline-flex items-center justify-center w-7 h-7 text-[11px] font-black text-slate-500 bg-zinc-100 group-hover:bg-blue-50 group-hover:text-blue-600 border border-zinc-200 group-hover:border-blue-200 rounded-lg transition-colors font-mono shadow-xs shrink-0"
                         >
                           [{TECLAS[indice]}]
                         </span>
                       )}
+                      
+                      <div className="min-w-0 flex-1 flex flex-col justify-center">
+                        <div className="flex items-center gap-2 mb-0.5 flex-wrap">
+                          <h3 className="font-bold text-slate-900 text-sm leading-tight group-hover:text-blue-600 transition-colors truncate max-w-full">
+                            {prod.nombre}
+                          </h3>
+                          <span className="px-1.5 py-0.5 text-[9px] font-bold tracking-wider text-slate-500 uppercase bg-slate-100 rounded-md shrink-0">
+                            {prod.categoria}
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-slate-400 font-medium truncate">
+                          {sinStock ? 'Sin stock' : `Stock: ${prod.stock}`}
+                        </p>
+                      </div>
                     </div>
 
-                    <div className="my-2.5">
-                      <h3 className="font-bold text-slate-900 text-sm leading-tight group-hover:text-blue-600 transition-colors line-clamp-2">
-                        {prod.nombre}
-                      </h3>
-                      <p className="text-[11px] text-slate-400 mt-1">
-                        {sinStock ? 'Sin stock' : `Stock: ${prod.stock}`}
-                      </p>
-                    </div>
-
-                    <div className="flex items-center justify-between pt-2 border-t border-zinc-100 mt-auto">
-                      <span className="font-black text-base text-blue-600 tracking-tight tabular-nums">
+                    <div className="flex items-center gap-3 shrink-0">
+                      <span className="font-black text-sm sm:text-base text-blue-600 tracking-tight tabular-nums whitespace-nowrap">
                         {formatearPrecio(prod.precio)}
                       </span>
-                      <span className="w-6 h-6 rounded-lg bg-zinc-100 group-hover:bg-blue-600 text-slate-600 group-hover:text-white flex items-center justify-center transition-colors shrink-0">
+                      <span className="w-8 h-8 rounded-lg bg-zinc-100 group-hover:bg-blue-600 text-slate-600 group-hover:text-white flex items-center justify-center transition-colors shrink-0">
                         <Plus className="w-4 h-4" />
                       </span>
                     </div>

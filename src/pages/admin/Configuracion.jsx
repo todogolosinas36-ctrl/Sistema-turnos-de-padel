@@ -186,7 +186,7 @@ export default function Configuracion() {
     <div className="max-w-4xl mx-auto w-full flex flex-col gap-5 sm:gap-8 pb-10">
       {/* ─── Cabecera ─── */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        
+
         {modoLocal && (
           <button
             type="button"
@@ -294,11 +294,10 @@ export default function Configuracion() {
                     title={preset.label}
                     onClick={() => setColorClub(preset.hex)}
                     style={{ backgroundColor: preset.hex }}
-                    className={`w-7 h-7 rounded-lg border-2 transition-transform hover:scale-110 active:scale-95 ${
-                      colorClub?.toLowerCase() === preset.hex.toLowerCase()
+                    className={`w-7 h-7 rounded-lg border-2 transition-transform hover:scale-110 active:scale-95 ${colorClub?.toLowerCase() === preset.hex.toLowerCase()
                         ? 'border-white ring-2 ring-slate-900 shadow-sm'
                         : 'border-white/80 shadow-xs'
-                    }`}
+                      }`}
                   />
                 ))}
               </div>
@@ -438,11 +437,10 @@ export default function Configuracion() {
 
         {/* Notificación de éxito / error */}
         {avisoCancha && (
-          <div className={`mx-4 sm:mx-6 mt-4 p-3 rounded-xl border flex items-center gap-2.5 text-xs font-bold animate-fade-in ${
-            avisoCancha.tipo === 'exito'
+          <div className={`mx-4 sm:mx-6 mt-4 p-3 rounded-xl border flex items-center gap-2.5 text-xs font-bold animate-fade-in ${avisoCancha.tipo === 'exito'
               ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
               : 'bg-rose-50 border-rose-200 text-rose-800'
-          }`}>
+            }`}>
             <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600" />
             <span>{avisoCancha.texto}</span>
           </div>
@@ -455,11 +453,10 @@ export default function Configuracion() {
             return (
               <div
                 key={cancha.id}
-                className={`flex flex-col sm:flex-row gap-4 items-start sm:items-center p-4 rounded-xl border transition-all duration-200 ${
-                  estaPausada
+                className={`flex flex-col sm:flex-row gap-4 items-start sm:items-center p-4 rounded-xl border transition-all duration-200 ${estaPausada
                     ? 'bg-amber-50/80 border-amber-300 shadow-2xs'
                     : 'bg-slate-50 border-slate-200/80'
-                }`}
+                  }`}
               >
                 <div className="flex-1 w-full">
                   <div className="flex items-center gap-2 mb-1.5">
@@ -516,11 +513,10 @@ export default function Configuracion() {
                       type="button"
                       onClick={() => togglePausarCancha(cancha)}
                       disabled={guardandoCanchaId === cancha.id}
-                      className={`h-10 px-3.5 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 active:scale-95 cursor-pointer disabled:opacity-50 whitespace-nowrap ${
-                        estaPausada
+                      className={`h-10 px-3.5 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 active:scale-95 cursor-pointer disabled:opacity-50 whitespace-nowrap ${estaPausada
                           ? 'bg-amber-500 hover:bg-amber-600 text-white shadow-xs'
                           : 'bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 shadow-2xs'
-                      }`}
+                        }`}
                       title={estaPausada ? 'Habilitar cancha para reservas' : 'Pausar cancha por lluvia, feriado o mantenimiento'}
                     >
                       {estaPausada ? (
@@ -630,11 +626,10 @@ export default function Configuracion() {
                       key={opcion.valor}
                       type="button"
                       onClick={() => cambiarDiasVisibles(opcion.valor)}
-                      className={`flex flex-col items-center justify-center px-4 py-3 rounded-xl border text-center transition-all cursor-pointer ${
-                        activo
+                      className={`flex flex-col items-center justify-center px-4 py-3 rounded-xl border text-center transition-all cursor-pointer ${activo
                           ? 'bg-blue-50 border-blue-500 text-blue-900 font-bold shadow-xs ring-1 ring-blue-500'
                           : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50 hover:border-slate-300'
-                      }`}
+                        }`}
                     >
                       <span className="text-sm font-extrabold">{opcion.label}</span>
                       <span className="text-[10px] text-slate-400 font-medium leading-none mt-1">{opcion.desc}</span>
