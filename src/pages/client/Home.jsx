@@ -395,8 +395,8 @@ export default function Home() {
                       No hay horarios disponibles para esta cancha en la fecha seleccionada.
                     </div>
                   ) : (
-                    {/* Grilla de horarios */}
                     <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-2.5">
+                      {/* Grilla de horarios */}
                       {cancha.bloquesLibres.map(({ hora: bloque, vencido }) => {
                         const horaFin = calcularHoraFin(bloque, duracion);
                         const slotId = `${cancha.id}-${bloque}`;
