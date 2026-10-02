@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { useTurnos } from '../context/TurnosContext';
 import { calcularHoraFin } from '../utils/timeCalculations';
-import { MessageCircle, CheckCircle, X, MapPin, CalendarDays, Clock, AlertTriangle } from 'lucide-react';
+import { MessageCircle, CheckCircle, X, CalendarDays, Clock, AlertTriangle } from 'lucide-react';
 
 export default function ReservaModal({ isOpen, onClose, datosReserva, onSuccess }) {
   const { agregarTurno, precioBaseCancha } = useTurnos();
@@ -23,16 +24,25 @@ export default function ReservaModal({ isOpen, onClose, datosReserva, onSuccess 
     }
   }, [isOpen]);
 
-  // Bloqueo de scroll de fondo cuando el modal está abierto
+  // Bloqueo de scroll robusto para iOS Safari y Android Chrome:
+  // guardamos el scrollY antes de fijar el body para no perder la posición.
   useEffect(() => {
-    if (isOpen) {
-      document.body.style.overflow = 'hidden';
-    } else {
-      document.body.style.overflow = 'unset';
-    }
+    if (!isOpen) return;
+
+    const scrollY = window.scrollY;
+    document.body.style.position = 'fixed';
+    document.body.style.top = `-${scrollY}px`;
+    document.body.style.left = '0';
+    document.body.style.right = '0';
+    document.body.style.overflow = 'hidden';
 
     return () => {
-      document.body.style.overflow = 'unset';
+      document.body.style.position = '';
+      document.body.style.top = '';
+      document.body.style.left = '';
+      document.body.style.right = '';
+      document.body.style.overflow = '';
+      window.scrollTo(0, scrollY);
     };
   }, [isOpen]);
 
@@ -93,16 +103,20 @@ export default function ReservaModal({ isOpen, onClose, datosReserva, onSuccess 
   const inputClass =
     'w-full bg-zinc-50 border border-zinc-200 rounded-xl px-3.5 py-2.5 text-zinc-900 font-medium placeholder-zinc-400 focus:outline-none focus:ring-2 focus:ring-zinc-900 focus:bg-white transition-all text-sm';
 
-  return (
+  return createPortal((
+    /* Overlay: fixed al viewport real, overflow-y-auto para que el contenido sea scrolleable si el teclado lo comprime */
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm h-[100dvh] w-screen"
+      className="fixed inset-0 z-[9999] overflow-y-auto bg-black/80 backdrop-blur-sm"
       onClick={onClose}
     >
-      {/* Tarjeta Interior */}
-      <div
-        className="relative my-auto max-h-[85dvh] overflow-y-auto w-full max-w-sm rounded-2xl p-5 shadow-2xl bg-white animate-in fade-in zoom-in-95 duration-150"
-        onClick={(e) => e.stopPropagation()}
-      >
+      {/* Contenedor de centrado: min-h-full + items-center garantizan centrado vertical en cualquier altura de viewport */}
+      <div className="flex min-h-full items-center justify-center p-4 text-center">
+
+        {/* Tarjeta interior */}
+        <div
+          className="relative w-full max-w-sm transform overflow-hidden rounded-2xl bg-white border border-zinc-100 p-5 text-left shadow-2xl transition-all my-auto animate-in fade-in zoom-in-95 duration-150"
+          onClick={(e) => e.stopPropagation()}
+        >
         {paso === 1 ? (
           <div>
             {/* Encabezado */}
@@ -240,7 +254,8 @@ export default function ReservaModal({ isOpen, onClose, datosReserva, onSuccess 
             </button>
           </div>
         )}
+        </div>
       </div>
     </div>
-  );
+  ), document.body);
 }
