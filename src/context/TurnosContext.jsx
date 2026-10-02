@@ -257,6 +257,40 @@ export function TurnosProvider({ children }) {
 
   useEffect(() => {
     cargarDatos();
+
+    // Sincronización Realtime (Postgres Changes) sin recargar
+    const turnosChannel = supabase.channel('realtime-turnos')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'turnos' },
+        (payload) => {
+          if (payload.eventType === 'INSERT') {
+            setTurnos(prev => {
+              if (prev.some(t => t.id === payload.new.id)) return prev;
+              return [...prev, normalizarTurno(payload.new)];
+            });
+          } else if (payload.eventType === 'DELETE') {
+            setTurnos(prev => prev.filter(t => t.id !== payload.old.id));
+          } else if (payload.eventType === 'UPDATE') {
+            const estado = payload.new?.estado?.toLowerCase();
+            if (estado === 'cancelado') {
+              setTurnos(prev => prev.filter(t => t.id !== payload.new.id));
+            } else {
+              setTurnos(prev => {
+                if (prev.some(t => t.id === payload.new.id)) {
+                  return prev.map(t => t.id === payload.new.id ? normalizarTurno(payload.new) : t);
+                }
+                return [...prev, normalizarTurno(payload.new)];
+              });
+            }
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(turnosChannel);
+    };
   }, [cargarDatos]);
 
   // Espejo en localStorage: red de seguridad si la base no está disponible.

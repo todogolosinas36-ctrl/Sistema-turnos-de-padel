@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import ReservaModal from '../../components/ReservaModal';
 import { Frown, BellRing, X } from 'lucide-react';
 import { useTurnos } from '../../context/TurnosContext';
@@ -61,6 +61,11 @@ export default function Home() {
   const [mostrarAvisoLiberacion, setMostrarAvisoLiberacion] = useState(false);
   const [datosEspera, setDatosEspera] = useState({ nombre: '', telefono: '', rango: '' });
 
+  // Variables para Presence (Bloqueo en vivo)
+  const miIdTemporal = useMemo(() => crypto.randomUUID(), []);
+  const [bloquesEnProceso, setBloquesEnProceso] = useState(new Set());
+  const channelRef = useRef(null);
+
   const { canchas, obtenerTurnosDelDia, incluyeManana, loading, diasVisibles, nombreClub, recargar } = useTurnos();
 
   const esHoy = fecha === hoyISO();
@@ -82,39 +87,40 @@ export default function Home() {
     }
   }, [dias, fecha]);
 
-  // Suscripción Realtime Pública para actualización instantánea
+  // Suscripción Realtime para Bloqueo en Vivo (Presence)
   useEffect(() => {
-    const channelName = `cliente-turnos-${Math.random().toString(36).substring(2, 9)}`;
-    const canal = supabase
-      .channel(channelName)
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'turnos' },
-        (payload) => {
-          console.log('🚨 [REALTIME CLIENTE] Evento recibido:', payload.eventType, payload);
+    const channel = supabase.channel('sala-reservas-en-vivo');
+    channelRef.current = channel;
 
-          // Disparar ante cualquier eliminación o actualización
-          if (payload.eventType === 'DELETE') {
-            setAvisoLiberado(true);
-          } else if (payload.eventType === 'UPDATE') {
-            // Aceptar cancelado, disponible o cambio de titular nulo
-            const estado = payload.new?.estado?.toLowerCase();
-            if (estado === 'cancelado' || estado === 'disponible' || !payload.new?.titular) {
-              setAvisoLiberado(true);
+    channel
+      .on('presence', { event: 'sync' }, () => {
+        const state = channel.presenceState();
+        const enProceso = new Set();
+        for (const id in state) {
+          state[id].forEach(pres => {
+            if (pres.horarioSeleccionado && pres.usuarioId !== miIdTemporal) {
+              enProceso.add(pres.horarioSeleccionado);
             }
-          }
+          });
         }
-      )
-      .subscribe((status, error) => {
-        console.log(`🔌 [REALTIME CLIENTE] Estado de conexión: ${status}`);
-        if (error) console.error('❌ Error de suscripción:', error);
-      });
+        setBloquesEnProceso(enProceso);
+      })
+      .subscribe();
 
     return () => {
-      console.log('🧹 Limpiando canal realtime...');
-      supabase.removeChannel(canal);
+      supabase.removeChannel(channel);
     };
-  }, []);
+  }, [miIdTemporal]);
+
+  // Trackear u untrackear cuando se abre/cierra la reserva
+  useEffect(() => {
+    if (reservaActiva) {
+      const slotId = `${reservaActiva.cancha.id}-${reservaActiva.horaInicio}`;
+      channelRef.current?.track({ horarioSeleccionado: slotId, usuarioId: miIdTemporal });
+    } else {
+      channelRef.current?.untrack();
+    }
+  }, [reservaActiva, miIdTemporal]);
 
   const guardarListaEspera = async (e) => {
     e.preventDefault();
@@ -389,36 +395,43 @@ export default function Home() {
                       No hay horarios disponibles para esta cancha en la fecha seleccionada.
                     </div>
                   ) : (
-                    /* Grilla de horarios */
+                    {/* Grilla de horarios */}
                     <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-2.5">
                       {cancha.bloquesLibres.map(({ hora: bloque, vencido }) => {
                         const horaFin = calcularHoraFin(bloque, duracion);
+                        const slotId = `${cancha.id}-${bloque}`;
+                        const estaEnProceso = bloquesEnProceso.has(slotId);
+                        
                         return (
                           <button
                             key={bloque}
-                            disabled={vencido}
+                            disabled={vencido || estaEnProceso}
                             onClick={
-                              vencido
+                              vencido || estaEnProceso
                                 ? undefined
                                 : () => setReservaActiva({ cancha, fecha, horaInicio: bloque, duracion })
                             }
                             className={
                               vencido
                                 ? 'py-3 px-2 rounded-xl border border-slate-900 bg-slate-950 opacity-25 cursor-not-allowed pointer-events-none select-none'
+                                : estaEnProceso
+                                ? 'py-3 px-2 rounded-xl border border-orange-500/50 bg-orange-950/20 opacity-70 cursor-not-allowed select-none'
                                 : 'py-3 px-2 rounded-xl border border-slate-800 bg-slate-900 text-slate-200 hover:border-emerald-500/60 hover:bg-slate-800/80 hover:shadow-md hover:shadow-emerald-500/10 hover:-translate-y-0.5 focus:outline-none focus:ring-1 focus:ring-emerald-500/50 transition-all duration-150 active:scale-95 cursor-pointer group'
                             }
-                            aria-disabled={vencido}
-                            title={vencido ? 'Este horario ya pasó' : undefined}
+                            aria-disabled={vencido || estaEnProceso}
+                            title={vencido ? 'Este horario ya pasó' : estaEnProceso ? 'Otro usuario está reservando este turno' : undefined}
                           >
                             <div className="flex flex-col items-center justify-center">
                               <span
                                 className={
                                   vencido
                                     ? 'text-sm font-semibold text-slate-600'
+                                    : estaEnProceso
+                                    ? 'text-sm font-bold text-orange-400'
                                     : 'text-sm font-bold text-slate-100 group-hover:text-emerald-400 transition-colors'
                                 }
                               >
-                                {bloque}
+                                {estaEnProceso ? 'En proceso...' : bloque}
                               </span>
                               <span className="text-[10px] font-medium text-slate-600 tracking-wide mt-1 uppercase">
                                 {horaFin}
