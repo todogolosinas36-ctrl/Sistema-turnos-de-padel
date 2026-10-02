@@ -51,7 +51,7 @@ export default function ReservaModal({ isOpen, onClose, datosReserva, onSuccess 
 
   const { cancha, fecha, horaInicio, duracion } = datosReserva;
 
-  const handleSubmit = async (e) => {
+  const handleContinuar = (e) => {
     e.preventDefault();
     setError(null);
 
@@ -60,7 +60,12 @@ export default function ReservaModal({ isOpen, onClose, datosReserva, onSuccess 
       setError('Por favor, ingresá un número de teléfono válido (mínimo 8 dígitos).');
       return;
     }
+    
+    setPaso(2);
+  };
 
+  const handleConfirmar = async () => {
+    setError(null);
     setLoading(true);
 
     try {
@@ -86,7 +91,7 @@ export default function ReservaModal({ isOpen, onClose, datosReserva, onSuccess 
       if (!data) throw new Error('No se pudo guardar la reserva');
 
       setTurnoInsertado(data);
-      setPaso(2);
+      setPaso(3);
 
       // Generar URL de WhatsApp y redireccionar automáticamente
       const numeroWhatsApp = import.meta.env.VITE_WHATSAPP_COMPLEJO || '';
@@ -220,7 +225,7 @@ ${linkCancelacion}
             </div>
 
             {/* Formulario */}
-            <form onSubmit={handleSubmit} className="space-y-3.5">
+            <form onSubmit={handleContinuar} className="space-y-3.5">
               <div>
                 <label className="block text-xs font-bold text-zinc-500 uppercase tracking-wider mb-1">
                   Nombre y Apellido
@@ -275,14 +280,96 @@ ${linkCancelacion}
                       Guardando…
                     </>
                   ) : (
-                    'Confirmar Reserva'
+                    'Revisar Reserva'
                   )}
                 </button>
               </div>
             </form>
           </div>
+        ) : paso === 2 ? (
+          /* Paso 2: Resumen / Confirmación */
+          <div className="text-left space-y-4 py-2">
+            <div>
+              <h2 className="text-xl font-black text-zinc-900 tracking-tight">Revisar Reserva</h2>
+              <p className="text-xs text-zinc-500 font-medium mt-0.5">Por favor, verifica que los datos sean correctos.</p>
+            </div>
+
+            <div className="bg-zinc-50 border border-zinc-100 rounded-xl p-4 space-y-3">
+              <div className="flex items-start gap-3">
+                <span className="text-lg">🎾</span>
+                <div>
+                  <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Cancha</p>
+                  <p className="text-sm font-bold text-zinc-800">{cancha?.nombre}</p>
+                </div>
+              </div>
+              <div className="flex items-start gap-3">
+                <span className="text-lg">📅</span>
+                <div>
+                  <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Día y Fecha</p>
+                  <p className="text-sm font-bold text-zinc-800">{fecha}</p>
+                </div>
+              </div>
+              <div className="flex items-start gap-3">
+                <span className="text-lg">⏰</span>
+                <div>
+                  <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Horario</p>
+                  <p className="text-sm font-bold text-zinc-800">{horaInicio} a {calcularHoraFin(horaInicio, duracion)} ({duracion} min)</p>
+                </div>
+              </div>
+              <div className="flex items-start gap-3">
+                <span className="text-lg">👤</span>
+                <div>
+                  <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Titular</p>
+                  <p className="text-sm font-bold text-zinc-800">{capitalizarPalabras(nombre)}</p>
+                </div>
+              </div>
+              <div className="flex items-start gap-3">
+                <span className="text-lg">📱</span>
+                <div>
+                  <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Teléfono</p>
+                  <p className="text-sm font-bold text-zinc-800">{telefono}</p>
+                </div>
+              </div>
+            </div>
+
+            {error && (
+              <div className="flex items-start gap-2 p-3 bg-red-50 border border-red-200 rounded-xl">
+                <AlertTriangle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+                <p className="text-xs font-semibold text-red-700 leading-relaxed">{error}</p>
+              </div>
+            )}
+
+            <div className="flex flex-col gap-2.5 pt-2">
+              <button
+                type="button"
+                disabled={loading}
+                onClick={handleConfirmar}
+                className="w-full bg-[#25D366] text-white font-bold text-sm py-3.5 px-4 rounded-xl shadow-md shadow-[#25D366]/20 hover:bg-[#20bd5a] active:scale-[0.98] transition-all flex justify-center items-center gap-2 disabled:opacity-50 cursor-pointer"
+              >
+                {loading ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    Guardando…
+                  </>
+                ) : (
+                  <>
+                    <MessageCircle className="w-4 h-4" />
+                    Confirmar Turno por WhatsApp 🎾
+                  </>
+                )}
+              </button>
+              <button
+                type="button"
+                onClick={() => setPaso(1)}
+                disabled={loading}
+                className="w-full py-3 text-zinc-500 font-bold hover:text-zinc-800 active:scale-[0.98] transition-all text-sm cursor-pointer"
+              >
+                ← Modificar Hora / Datos
+              </button>
+            </div>
+          </div>
         ) : (
-          /* Paso 2: Confirmación */
+          /* Paso 3: Confirmación Final */
           <div className="text-center space-y-4 py-2">
             <div className="w-14 h-14 bg-emerald-50 rounded-2xl flex items-center justify-center mx-auto">
               <CheckCircle className="w-8 h-8 text-emerald-500" />

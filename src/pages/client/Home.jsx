@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import ReservaModal from '../../components/ReservaModal';
 import { Frown, BellRing, X } from 'lucide-react';
 import { useTurnos } from '../../context/TurnosContext';
@@ -57,7 +58,7 @@ export default function Home() {
   const [fecha, setFecha] = useState(hoyISO);
   const [duracion, setDuracion] = useState(90);
   const [reservaActiva, setReservaActiva] = useState(null);
-  const [avisoLiberado, setAvisoLiberado] = useState(false);
+  const [turnoLiberadoAviso, setTurnoLiberadoAviso] = useState(false);
   const [mostrarAvisoLiberacion, setMostrarAvisoLiberacion] = useState(false);
   const [datosEspera, setDatosEspera] = useState({ nombre: '', telefono: '', rango: '' });
 
@@ -124,20 +125,46 @@ export default function Home() {
 
   // Escuchar cancelaciones para mostrar el Toast persistente
   useEffect(() => {
-    const channelName = `cliente-cancelaciones-${Math.random().toString(36).substring(2, 9)}`;
+    const canalId = `cliente-alertas-${Math.random().toString(36).substring(2, 7)}`;
+    
     const canal = supabase
-      .channel(channelName)
+      .channel(canalId)
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'turnos' },
         (payload) => {
-          if (payload.eventType === 'DELETE' || (payload.eventType === 'UPDATE' && payload.new?.estado?.toLowerCase() === 'cancelado')) {
-            setAvisoLiberado(true);
+          console.log('📡 [CLIENTE REALTIME] Evento detectado:', payload.eventType, payload);
+
+          // CASO 1: Turno borrado (DELETE) -> Se liberó un espacio
+          if (payload.eventType === 'DELETE') {
+            console.log('🟢 Turno eliminado detectado, activando Toast...');
+            setTurnoLiberadoAviso(true);
+          }
+          
+          // CASO 2: Turno actualizado (UPDATE) a cancelado o disponible
+          else if (payload.eventType === 'UPDATE') {
+            const estado = payload.new?.estado?.toLowerCase();
+            const estadoAnterior = payload.old?.estado?.toLowerCase();
+            
+            if (
+              estado === 'cancelado' || 
+              estado === 'disponible' || 
+              (estadoAnterior === 'confirmado' && !payload.new?.titular)
+            ) {
+              console.log('🟢 Turno cancelado detectado, activando Toast...');
+              setTurnoLiberadoAviso(true);
+            }
           }
         }
       )
-      .subscribe();
-    return () => supabase.removeChannel(canal);
+      .subscribe((status, error) => {
+        console.log(`🔌 [CLIENTE REALTIME] Estado conexión: ${status}`);
+        if (error) console.error('Error suscripción cliente:', error);
+      });
+
+    return () => {
+      supabase.removeChannel(canal);
+    };
   }, []);
 
   const guardarListaEspera = async (e) => {
@@ -213,39 +240,36 @@ export default function Home() {
     <div className="flex flex-col w-full pb-20 text-slate-100">
       
       {/* Toast de Oportunidad (Realtime) */}
-      {avisoLiberado && (
-        <div className="fixed top-4 right-4 z-[99999] max-w-sm w-full p-4 animate-in slide-in-from-right fade-in duration-300">
-          <div className="bg-slate-900/95 backdrop-blur-md border border-emerald-500/30 text-white px-5 py-4 rounded-2xl shadow-2xl shadow-emerald-500/10 flex flex-col gap-3">
-            <div className="flex items-center gap-3">
-              <div className="bg-emerald-500/10 p-2 rounded-xl shrink-0">
-                <BellRing className="w-5 h-5 text-emerald-400" />
-              </div>
-              <div className="flex-1">
-                <p className="font-bold text-sm tracking-wide text-slate-100">🎾 ¡Se acaba de liberar un turno!</p>
-                <p className="text-xs text-slate-400 font-medium mt-0.5">
-                  Haz clic abajo para actualizar la grilla.
-                </p>
-              </div>
+      {turnoLiberadoAviso && typeof document !== 'undefined' && createPortal(
+        <aside aria-label="Notificación de disponibilidad" className="fixed top-4 right-4 z-[999999] w-[calc(100%-2rem)] max-w-sm rounded-2xl bg-slate-900 border-2 border-emerald-500 p-4 text-white shadow-2xl backdrop-blur-xl animate-in fade-in slide-in-from-top-4 duration-300">
+          <div className="flex items-start gap-3">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-500/20 text-emerald-400 text-xl">
+              🎾
             </div>
-            <div className="flex items-center gap-2">
-              <button 
+            <div className="flex-1">
+              <h4 className="font-bold text-sm text-emerald-400">¡Se liberó un turno!</h4>
+              <p className="text-xs text-slate-300 mt-1">
+                Hay nuevos horarios disponibles. Actualiza la lista para verlos.
+              </p>
+              <button
                 onClick={() => {
                   if (recargar) recargar();
-                  setAvisoLiberado(false);
-                }} 
-                className="flex-1 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold px-4 py-2.5 rounded-xl text-xs transition-colors shadow-lg shadow-emerald-500/20 active:scale-95 whitespace-nowrap"
+                  setTurnoLiberadoAviso(false);
+                }}
+                className="mt-3 inline-flex items-center justify-center w-full rounded-lg bg-emerald-500 px-3 py-2 text-xs font-semibold text-slate-950 hover:bg-emerald-400 transition-colors shadow-lg shadow-emerald-500/20 cursor-pointer"
               >
                 Actualizar disponibilidad
               </button>
-              <button 
-                onClick={() => setAvisoLiberado(false)} 
-                className="bg-slate-800 hover:bg-slate-700 p-2.5 rounded-xl transition-colors cursor-pointer text-slate-400 hover:text-slate-200 shrink-0"
-              >
-                <X className="w-4 h-4" />
-              </button>
             </div>
+            <button
+              onClick={() => setTurnoLiberadoAviso(false)}
+              className="text-slate-400 hover:text-white p-1 cursor-pointer"
+            >
+              ✕
+            </button>
           </div>
-        </div>
+        </aside>,
+        document.body
       )}
 
       {/* ── Hero con Nombre del Club ── */}
@@ -429,7 +453,7 @@ export default function Home() {
                                 ? undefined
                                 : () => {
                                     setReservaActiva({ cancha, fecha, horaInicio: bloque, duracion });
-                                    setAvisoLiberado(false);
+                                    setTurnoLiberadoAviso(false);
                                   }
                             }
                             className={
