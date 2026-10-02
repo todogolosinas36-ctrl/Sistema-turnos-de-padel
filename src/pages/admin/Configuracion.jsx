@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { useTheme } from '../../context/ThemeContext';
 import { useTurnos } from '../../context/TurnosContext';
+import { supabase } from '../../lib/supabaseClient';
 
 export default function Configuracion() {
   const { theme, changeTheme } = useTheme();
@@ -62,6 +63,41 @@ export default function Configuracion() {
   // Estado de tarifas (buffer de edición; se persiste al guardar)
   const [inputPrecioBase, setInputPrecioBase] = useState(() => (precioBaseCancha ? String(precioBaseCancha) : ''));
   const [tarifaGuardada, setTarifaGuardada] = useState(false);
+  const [guardandoTarifa, setGuardandoTarifa] = useState(false);
+
+  // 2. Carga Inicial Persistente (useEffect) desde Supabase
+  useEffect(() => {
+    let montado = true;
+
+    async function cargarTarifaDesdeSupabase() {
+      try {
+        const { data, error } = await supabase
+          .from('configuracion')
+          .select('precio_base')
+          .eq('id', 1)
+          .maybeSingle();
+
+        if (error) {
+          console.warn('[Configuración] Error al leer tarifa desde Supabase:', error.message);
+          return;
+        }
+
+        if (montado && data && Number.isFinite(Number(data.precio_base)) && Number(data.precio_base) > 0) {
+          const precioDB = Number(data.precio_base);
+          setInputPrecioBase(String(precioDB));
+          setPrecioBaseCancha(precioDB);
+        }
+      } catch (err) {
+        console.error('[Configuración] Error al cargar tarifa:', err);
+      }
+    }
+
+    cargarTarifaDesdeSupabase();
+
+    return () => {
+      montado = false;
+    };
+  }, [setPrecioBaseCancha]);
 
   useEffect(() => {
     if (precioBaseCancha) {
@@ -73,20 +109,37 @@ export default function Configuracion() {
   const [whatsapp, setWhatsapp] = useState('');
   const [datosGuardados, setDatosGuardados] = useState(false);
 
-  // Estado de horarios. El valor vive en el contexto, así que el cambio se
-  // refleja al instante en la grilla y en la vista de reservas (antes se leía
-  // de localStorage a nivel de módulo y había que recargar con F5).
-
-  const guardarTarifa = () => {
-    const n = Number(inputPrecioBase);
-    if (!Number.isFinite(n) || n <= 0) {
+  // 1. Persistencia en Supabase
+  const handleGuardarTarifa = async () => {
+    const precioNumerico = Number(inputPrecioBase);
+    if (!Number.isFinite(precioNumerico) || precioNumerico <= 0) {
       alert('Ingresá un monto válido para la tarifa base.');
-      setInputPrecioBase(String(precioBaseCancha));
+      setInputPrecioBase(precioBaseCancha ? String(precioBaseCancha) : '15000');
       return;
     }
-    setPrecioBaseCancha(n);
-    setTarifaGuardada(true);
-    setTimeout(() => setTarifaGuardada(false), 3000);
+
+    setGuardandoTarifa(true);
+    try {
+      const { error } = await supabase
+        .from('configuracion')
+        .upsert({ id: 1, precio_base: precioNumerico }, { onConflict: 'id' });
+
+      if (error) {
+        console.error('Error al guardar tarifa:', error);
+        alert('Error al guardar en base de datos');
+        return;
+      }
+
+      setPrecioBaseCancha(precioNumerico);
+      setTarifaGuardada(true);
+      setTimeout(() => setTarifaGuardada(false), 3000);
+      alert('Tarifa guardada correctamente');
+    } catch (err) {
+      console.error('Error al guardar tarifa:', err);
+      alert('Error al guardar en base de datos');
+    } finally {
+      setGuardandoTarifa(false);
+    }
   };
 
   const guardarDatos = () => {
@@ -355,10 +408,15 @@ export default function Configuracion() {
           {!tarifaGuardada && <div />}
           <button
             type="button"
-            onClick={guardarTarifa}
-            className="bg-punto-brand hover:bg-punto-hover text-white font-bold py-3 sm:py-2.5 px-6 rounded-lg shadow-sm transition-all active:scale-95 flex items-center justify-center gap-2 text-sm w-full sm:w-auto"
+            onClick={handleGuardarTarifa}
+            disabled={guardandoTarifa}
+            className="bg-punto-brand hover:bg-punto-hover text-white font-bold py-3 sm:py-2.5 px-6 rounded-lg shadow-sm transition-all active:scale-95 flex items-center justify-center gap-2 text-sm w-full sm:w-auto disabled:opacity-50 cursor-pointer"
           >
-            <Save className="w-3.5 h-3.5" />
+            {guardandoTarifa ? (
+              <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+            ) : (
+              <Save className="w-3.5 h-3.5" />
+            )}
             Guardar Tarifa
           </button>
         </div>

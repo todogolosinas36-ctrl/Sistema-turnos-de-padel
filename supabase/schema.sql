@@ -283,3 +283,28 @@ drop policy if exists "cierres_caja insert pública" on public.cierres_caja;
 create policy "cierres_caja insert pública"
   on public.cierres_caja for insert to anon, authenticated with check (true);
 
+
+-- ────────────────────────────────────────────────────────────────────────────
+--  6) configuracion — Ajustes globales y tarifas del complejo
+-- ────────────────────────────────────────────────────────────────────────────
+create table if not exists public.configuracion (
+  id              integer primary key default 1,
+  precio_base     integer not null default 15000,
+  nombre_club     text,
+  actualizado_el  timestamptz not null default now()
+);
+
+alter table public.configuracion enable row level security;
+
+drop policy if exists "configuracion lectura pública" on public.configuracion;
+create policy "configuracion lectura pública"
+  on public.configuracion for select to anon, authenticated using (true);
+
+drop policy if exists "configuracion escritura pública" on public.configuracion;
+create policy "configuracion escritura pública"
+  on public.configuracion for all to anon, authenticated using (true) with check (true);
+
+insert into public.configuracion (id, precio_base)
+values (1, 15000)
+on conflict (id) do nothing;
+

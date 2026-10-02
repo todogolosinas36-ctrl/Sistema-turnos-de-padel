@@ -209,11 +209,19 @@ export function TurnosProvider({ children }) {
   const cargarDatos = useCallback(async () => {
     setLoading(true);
 
-    const [resCanchas, resTurnos, resFijos] = await Promise.all([
+    const [resCanchas, resTurnos, resFijos, resConfig] = await Promise.all([
       supabase.from('canchas').select('*').order('orden'),
       supabase.from('turnos').select('*'),
       supabase.from('turnos_fijos').select('*'),
+      supabase.from('configuracion').select('precio_base').eq('id', 1).maybeSingle(),
     ]);
+
+    // Sincronización Global de tarifa desde Supabase (tabla configuracion)
+    if (!resConfig?.error && resConfig?.data && Number.isFinite(Number(resConfig.data.precio_base)) && Number(resConfig.data.precio_base) > 0) {
+      const precioSupabase = Number(resConfig.data.precio_base);
+      setPrecioBaseCanchaState(precioSupabase);
+      localStorage.setItem(LS_PRECIO_BASE, String(precioSupabase));
+    }
 
     if (resCanchas.error) {
       console.error('[Turnos] No se pudieron leer las canchas:', resCanchas.error.message);
@@ -229,18 +237,6 @@ export function TurnosProvider({ children }) {
     } else {
       const turnosNormalizados = (resTurnos.data || []).map(normalizarTurno).filter(Boolean);
       setTurnos(turnosNormalizados);
-
-      // Fuente de la Verdad en Supabase: si existen turnos con total_base_cancha o precio registrado,
-      // consolidar el precio base general con el más reciente guardado en Supabase
-      const turnosConPrecio = (resTurnos.data || [])
-        .filter((t) => Number(t.total_base_cancha) > 0 || Number(t.precio) > 0)
-        .sort((a, b) => new Date(b.creado_el || b.fecha || 0) - new Date(a.creado_el || a.fecha || 0));
-
-      if (turnosConPrecio.length > 0) {
-        const precioSupabase = Number(turnosConPrecio[0].total_base_cancha) || Number(turnosConPrecio[0].precio);
-        setPrecioBaseCanchaState(precioSupabase);
-        localStorage.setItem(LS_PRECIO_BASE, String(precioSupabase));
-      }
     }
 
     if (resFijos.error) {
