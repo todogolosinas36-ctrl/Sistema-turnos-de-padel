@@ -57,7 +57,7 @@ export default function Home() {
   const [fecha, setFecha] = useState(hoyISO);
   const [duracion, setDuracion] = useState(90);
   const [reservaActiva, setReservaActiva] = useState(null);
-  const [turnoLiberado, setTurnoLiberado] = useState(null);
+  const [avisoLiberado, setAvisoLiberado] = useState(false);
   const [mostrarAvisoLiberacion, setMostrarAvisoLiberacion] = useState(false);
   const [datosEspera, setDatosEspera] = useState({ nombre: '', telefono: '', rango: '' });
 
@@ -85,31 +85,34 @@ export default function Home() {
   // Suscripción Realtime Pública para actualización instantánea
   useEffect(() => {
     const channel = supabase
-      .channel('turnos-publicos')
+      .channel('cliente-turnos-liberados')
       .on(
         'postgres_changes',
-        { event: '*', schema: 'public', table: 'turnos' },
+        { event: 'DELETE', schema: 'public', table: 'turnos' },
         (payload) => {
-          if (recargar) recargar();
-
-          const eventType = payload.eventType;
-          const isCancel = eventType === 'DELETE' || (eventType === 'UPDATE' && payload.new.estado === 'cancelado' && payload.old.estado !== 'cancelado');
-          
-          if (isCancel) {
-            const t = eventType === 'DELETE' ? payload.old : payload.new;
-            if (t.fecha === fecha) {
-              setTurnoLiberado(t);
-              setTimeout(() => setTurnoLiberado(null), 8000); // ocultar toast tras 8s
-            }
+          console.log('Turno eliminado/liberado:', payload);
+          setAvisoLiberado(true);
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'turnos' },
+        (payload) => {
+          // Si el estado cambió a 'cancelado' o 'disponible'
+          if (payload.new && (payload.new.estado === 'cancelado' || payload.new.activo === false)) {
+            console.log('Turno cancelado/liberado:', payload);
+            setAvisoLiberado(true);
           }
         }
       )
-      .subscribe();
+      .subscribe((status) => {
+        console.log('Estado suscripción Realtime cliente:', status);
+      });
 
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [fecha, recargar]);
+  }, []);
 
   const guardarListaEspera = async (e) => {
     e.preventDefault();
@@ -184,19 +187,37 @@ export default function Home() {
     <div className="flex flex-col w-full pb-20 text-slate-100">
       
       {/* Toast de Oportunidad (Realtime) */}
-      {turnoLiberado && (
-        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[100] animate-in slide-in-from-top fade-in duration-300">
-          <div className="bg-emerald-500 text-white px-4 py-3 rounded-2xl shadow-xl shadow-emerald-500/20 flex items-center gap-3 w-max max-w-[90vw]">
-            <div className="bg-white/20 p-2 rounded-xl shrink-0"><BellRing className="w-5 h-5" /></div>
-            <div>
-              <p className="font-bold text-sm">⚡ ¡Atención! Se acaba de liberar un turno</p>
-              <p className="text-xs text-emerald-100 font-medium mt-0.5">
-                Cancha {turnoLiberado.cancha_nombre || turnoLiberado.cancha_id} a las {turnoLiberado.hora_inicio?.substring(0, 5)} hs. ¡Aprovechalo!
-              </p>
+      {avisoLiberado && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[100] animate-in slide-in-from-top fade-in duration-300 w-[95vw] max-w-md">
+          <div className="bg-slate-900/90 backdrop-blur-md border border-emerald-500/30 text-white px-5 py-4 rounded-2xl shadow-2xl shadow-emerald-500/10 flex flex-col sm:flex-row items-center gap-4">
+            <div className="flex items-center gap-3 w-full sm:w-auto">
+              <div className="bg-emerald-500/10 p-2 rounded-xl shrink-0">
+                <BellRing className="w-5 h-5 text-emerald-400" />
+              </div>
+              <div className="flex-1">
+                <p className="font-bold text-sm tracking-wide text-slate-100">🎾 ¡Se acaba de liberar un turno!</p>
+                <p className="text-xs text-slate-400 font-medium mt-0.5">
+                  Haz clic abajo para actualizar la grilla.
+                </p>
+              </div>
             </div>
-            <button onClick={() => setTurnoLiberado(null)} className="ml-2 bg-white/10 hover:bg-white/20 p-1.5 rounded-lg transition-colors cursor-pointer">
-              <X className="w-4 h-4" />
-            </button>
+            <div className="flex items-center gap-2 mt-2 sm:mt-0 w-full sm:w-auto">
+              <button 
+                onClick={() => {
+                  if (recargar) recargar();
+                  setAvisoLiberado(false);
+                }} 
+                className="flex-1 sm:flex-none bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold px-4 py-2.5 rounded-xl text-xs transition-colors shadow-lg shadow-emerald-500/20 active:scale-95 whitespace-nowrap"
+              >
+                Actualizar disponibilidad
+              </button>
+              <button 
+                onClick={() => setAvisoLiberado(false)} 
+                className="bg-slate-800 hover:bg-slate-700 p-2.5 rounded-xl transition-colors cursor-pointer text-slate-400 hover:text-slate-200 shrink-0"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
           </div>
         </div>
       )}
