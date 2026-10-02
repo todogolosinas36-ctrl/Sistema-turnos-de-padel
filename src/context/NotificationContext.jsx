@@ -9,7 +9,8 @@ import {
 import { createPortal } from 'react-dom';
 import { supabase } from '../lib/supabaseClient';
 import { normalizarHora } from '../utils/dateHelpers';
-import { Bell, X, Clock } from 'lucide-react';
+import { Bell, X, Clock, CalendarDays, AlertTriangle } from 'lucide-react';
+import { useTurnos } from './TurnosContext';
 
 /* ══════════════════════════════════════════════════════════════════════════
    Context + Hook
@@ -64,17 +65,17 @@ function ToastItem({ toast, onDismiss }) {
       `}
     >
       {/* Icono */}
-      <div className="shrink-0 w-9 h-9 rounded-xl bg-indigo-50 flex items-center justify-center mt-0.5">
-        <Bell className="w-4 h-4 text-indigo-500" />
+      <div className={`shrink-0 w-9 h-9 rounded-xl flex items-center justify-center mt-0.5 ${toast.tipo === 'insert' ? 'bg-emerald-50 text-emerald-500' : 'bg-red-50 text-red-500'}`}>
+        {toast.tipo === 'insert' ? <CalendarDays className="w-4 h-4" /> : <AlertTriangle className="w-4 h-4" />}
       </div>
 
       {/* Contenido */}
       <div className="flex-1 min-w-0">
-        <p className="text-xs font-bold text-slate-500 leading-tight uppercase tracking-wide">
-          Nuevo turno reservado
+        <p className={`text-xs font-bold leading-tight uppercase tracking-wide ${toast.tipo === 'insert' ? 'text-emerald-600' : 'text-red-600'}`}>
+          {toast.tipo === 'insert' ? 'Nuevo turno reservado' : 'Turno cancelado'}
         </p>
         <p className="text-sm font-semibold text-slate-900 mt-0.5 truncate capitalize">
-          {toast.nombre}
+          {toast.tipo === 'insert' ? toast.nombre : `${toast.nombre} liberó`}
         </p>
         <div className="flex items-center gap-1.5 mt-1">
           <Clock className="w-3 h-3 text-slate-400 shrink-0" />
@@ -85,7 +86,7 @@ function ToastItem({ toast, onDismiss }) {
         {/* Barra de progreso de auto-dismiss */}
         <div className="mt-2.5 h-0.5 bg-slate-100 rounded-full overflow-hidden">
           <div
-            className="h-full bg-indigo-400 rounded-full origin-left"
+            className={`h-full rounded-full origin-left ${toast.tipo === 'insert' ? 'bg-emerald-400' : 'bg-red-400'}`}
             style={{ animation: 'notif-progress 4s linear forwards' }}
           />
         </div>
@@ -130,14 +131,42 @@ function ToastContainer({ toasts, onDismiss }) {
 export function NotificationProvider({ children }) {
   const [notificaciones, setNotificaciones] = useState([]);
   const [toasts, setToasts] = useState([]);
-  // Evita procesar el mismo evento dos veces (StrictMode / reconexiones)
   const procesadosRef = useRef(new Set());
+  const { recargar } = useTurnos();
+
+  const playBeep = useCallback((tipo) => {
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const osc = ctx.createOscillator();
+      const gainNode = ctx.createGain();
+      osc.connect(gainNode);
+      gainNode.connect(ctx.destination);
+      if (tipo === 'insert') {
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(523.25, ctx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(1046.50, ctx.currentTime + 0.1);
+        gainNode.gain.setValueAtTime(0.5, ctx.currentTime);
+        gainNode.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.3);
+      } else {
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(440, ctx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(220, ctx.currentTime + 0.2);
+        gainNode.gain.setValueAtTime(0.5, ctx.currentTime);
+        gainNode.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.3);
+      }
+      osc.start(ctx.currentTime);
+      osc.stop(ctx.currentTime + 0.3);
+    } catch(e) {
+      console.warn('Audio no soportado', e);
+    }
+  }, []);
 
   /* Agregar notificacion al array y disparar toast */
-  const agregarNotificacion = useCallback((turno) => {
+  const agregarNotificacion = useCallback((turno, tipo) => {
     const uid = turno.id || crypto.randomUUID();
-    if (procesadosRef.current.has(uid)) return;
-    procesadosRef.current.add(uid);
+    const eventId = `${uid}-${tipo}`;
+    if (procesadosRef.current.has(eventId)) return;
+    procesadosRef.current.add(eventId);
 
     const nombreCompleto = `${turno.cliente_nombre || 'Cliente'} ${turno.cliente_apellido || ''}`.trim();
     const hora = normalizarHora(turno.hora_inicio) || turno.hora_inicio?.substring(0, 5) || '?';
@@ -145,7 +174,9 @@ export function NotificationProvider({ children }) {
     const fecha = turno.fecha || '';
 
     const notif = {
-      id: uid,
+      id: crypto.randomUUID(),
+      turnoId: uid,
+      tipo,
       nombre: nombreCompleto,
       hora,
       cancha,
@@ -153,12 +184,12 @@ export function NotificationProvider({ children }) {
       timestamp: new Date(),
     };
 
-    // Agregar al historial (maximo 50)
     setNotificaciones((prev) => [notif, ...prev].slice(0, 50));
-
-    // Disparar toast con ID unico propio para poder cerrar individualmente
     setToasts((prev) => [...prev, { ...notif, id: crypto.randomUUID() }]);
-  }, []);
+
+    playBeep(tipo);
+    if (recargar) recargar();
+  }, [playBeep, recargar]);
 
   /* Descartar toast */
   const dismissToast = useCallback((toastId) => {
@@ -173,13 +204,19 @@ export function NotificationProvider({ children }) {
   /* Suscripcion Supabase Realtime */
   useEffect(() => {
     const channel = supabase
-      .channel('notif-turnos-insert')
+      .channel('notif-turnos-eventos')
       .on(
         'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'turnos' },
+        { event: '*', schema: 'public', table: 'turnos' },
         (payload) => {
-          if (payload.new) {
-            agregarNotificacion(payload.new);
+          if (payload.eventType === 'INSERT') {
+            agregarNotificacion(payload.new, 'insert');
+          } else if (payload.eventType === 'UPDATE') {
+            if (payload.new.estado === 'cancelado' && payload.old.estado !== 'cancelado') {
+              agregarNotificacion(payload.new, 'cancel');
+            }
+          } else if (payload.eventType === 'DELETE') {
+            agregarNotificacion(payload.old, 'cancel');
           }
         }
       )

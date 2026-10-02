@@ -15,6 +15,7 @@ import {
   Coffee,
   AlertTriangle,
   CheckCheck,
+  CalendarDays,
 } from 'lucide-react';
 import LogoPadel from '../components/LogoPadel';
 import { useTheme } from '../context/ThemeContext';
@@ -337,12 +338,15 @@ export default function AdminLayout() {
                             role="menuitem"
                             className="flex items-start gap-3 px-4 py-3 border-b border-slate-50 hover:bg-slate-50 transition-colors last:border-0"
                           >
-                            <div className="shrink-0 w-8 h-8 rounded-xl bg-indigo-50 flex items-center justify-center mt-0.5">
-                              <Bell className="w-3.5 h-3.5 text-indigo-400" />
+                            <div className={`shrink-0 w-8 h-8 rounded-xl flex items-center justify-center mt-0.5 ${notif.tipo === 'insert' ? 'bg-emerald-50 text-emerald-500' : 'bg-red-50 text-red-500'}`}>
+                              {notif.tipo === 'insert' ? <CalendarDays className="w-3.5 h-3.5" /> : <AlertTriangle className="w-3.5 h-3.5" />}
                             </div>
                             <div className="flex-1 min-w-0">
+                              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-0.5">
+                                {notif.tipo === 'insert' ? 'Nuevo turno' : 'Turno cancelado'}
+                              </p>
                               <p className="text-sm font-semibold text-slate-800 truncate capitalize leading-tight">
-                                {notif.nombre}
+                                {notif.tipo === 'insert' ? notif.nombre : `${notif.nombre} liberó`}
                               </p>
                               <p className="text-xs text-slate-500 mt-0.5 tabular-nums">
                                 {notif.hora} hs &middot; {notif.cancha}

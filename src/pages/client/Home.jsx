@@ -1,8 +1,9 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import ReservaModal from '../../components/ReservaModal';
-import { Frown } from 'lucide-react';
+import { Frown, BellRing, X } from 'lucide-react';
 import { useTurnos } from '../../context/TurnosContext';
 import { hoyISO } from '../../utils/dateHelpers';
+import { supabase } from '../../lib/supabaseClient';
 
 function generarProximosDias(n = 7, desde = hoyISO()) {
   const dias = [];
@@ -56,8 +57,11 @@ export default function Home() {
   const [fecha, setFecha] = useState(hoyISO);
   const [duracion, setDuracion] = useState(90);
   const [reservaActiva, setReservaActiva] = useState(null);
+  const [turnoLiberado, setTurnoLiberado] = useState(null);
+  const [mostrarAvisoLiberacion, setMostrarAvisoLiberacion] = useState(false);
+  const [datosEspera, setDatosEspera] = useState({ nombre: '', telefono: '', rango: '' });
 
-  const { canchas, obtenerTurnosDelDia, incluyeManana, loading, diasVisibles, nombreClub } = useTurnos();
+  const { canchas, obtenerTurnosDelDia, incluyeManana, loading, diasVisibles, nombreClub, recargar } = useTurnos();
 
   const esHoy = fecha === hoyISO();
 
@@ -77,6 +81,52 @@ export default function Home() {
       setFecha(dias[0].value);
     }
   }, [dias, fecha]);
+
+  // Suscripción Realtime Pública para actualización instantánea
+  useEffect(() => {
+    const channel = supabase
+      .channel('turnos-publicos')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'turnos' },
+        (payload) => {
+          if (recargar) recargar();
+
+          const eventType = payload.eventType;
+          const isCancel = eventType === 'DELETE' || (eventType === 'UPDATE' && payload.new.estado === 'cancelado' && payload.old.estado !== 'cancelado');
+          
+          if (isCancel) {
+            const t = eventType === 'DELETE' ? payload.old : payload.new;
+            if (t.fecha === fecha) {
+              setTurnoLiberado(t);
+              setTimeout(() => setTurnoLiberado(null), 8000); // ocultar toast tras 8s
+            }
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [fecha, recargar]);
+
+  const guardarListaEspera = async (e) => {
+    e.preventDefault();
+    if (!datosEspera.nombre || !datosEspera.telefono) return;
+    
+    // Lo guardamos en una tabla lista_espera, aunque no exista, evitamos crashear
+    await supabase.from('lista_espera').insert([{
+      fecha_solicitada: fecha,
+      nombre: datosEspera.nombre,
+      telefono: datosEspera.telefono,
+      rango_horario: datosEspera.rango
+    }]);
+    
+    alert('¡Anotado! Te avisaremos si se libera algún turno.');
+    setMostrarAvisoLiberacion(false);
+    setDatosEspera({ nombre: '', telefono: '', rango: '' });
+  };
 
   const duracionSeleccionada = parseInt(duracion, 10);
   const horaInicioNum = incluyeManana ? 8 : 14;
@@ -132,6 +182,24 @@ export default function Home() {
 
   return (
     <div className="flex flex-col w-full pb-20 text-slate-100">
+      
+      {/* Toast de Oportunidad (Realtime) */}
+      {turnoLiberado && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[100] animate-in slide-in-from-top fade-in duration-300">
+          <div className="bg-emerald-500 text-white px-4 py-3 rounded-2xl shadow-xl shadow-emerald-500/20 flex items-center gap-3 w-max max-w-[90vw]">
+            <div className="bg-white/20 p-2 rounded-xl shrink-0"><BellRing className="w-5 h-5" /></div>
+            <div>
+              <p className="font-bold text-sm">⚡ ¡Atención! Se acaba de liberar un turno</p>
+              <p className="text-xs text-emerald-100 font-medium mt-0.5">
+                Cancha {turnoLiberado.cancha_nombre || turnoLiberado.cancha_id} a las {turnoLiberado.hora_inicio?.substring(0, 5)} hs. ¡Aprovechalo!
+              </p>
+            </div>
+            <button onClick={() => setTurnoLiberado(null)} className="ml-2 bg-white/10 hover:bg-white/20 p-1.5 rounded-lg transition-colors cursor-pointer">
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* ── Hero con Nombre del Club ── */}
       <section className="px-5 sm:px-8 pt-8 pb-6 border-b border-slate-800/60 text-center flex flex-col items-center justify-center">
@@ -237,6 +305,12 @@ export default function Home() {
               <p className="text-sm text-slate-500 mt-2 max-w-[280px]">
                 No hay horarios disponibles para esta fecha. Por favor, seleccioná otro día.
               </p>
+              <button 
+                onClick={() => setMostrarAvisoLiberacion(true)}
+                className="mt-5 px-5 py-2.5 bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-bold rounded-xl text-sm transition-all shadow-lg shadow-emerald-500/20 cursor-pointer active:scale-95"
+              >
+                ¿No encontraste horario? Avisarme si se libera
+              </button>
             </div>
           ) : (
             canchasConDisponibilidad.map((cancha) => (
@@ -347,6 +421,37 @@ export default function Home() {
           setReservaActiva(null);
         }}
       />
+
+      {/* Modal Lista de Espera */}
+      {mostrarAvisoLiberacion && (
+        <div className="fixed inset-0 z-[150] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 p-6 rounded-3xl w-full max-w-sm relative animate-in fade-in zoom-in duration-200">
+            <button onClick={() => setMostrarAvisoLiberacion(false)} className="absolute top-4 right-4 text-slate-500 hover:text-slate-300">
+              <X className="w-5 h-5" />
+            </button>
+            <div className="w-12 h-12 bg-emerald-500/10 rounded-2xl flex items-center justify-center mb-4">
+              <BellRing className="w-6 h-6 text-emerald-400" />
+            </div>
+            <h2 className="text-xl font-bold text-white mb-1">Avisarme si se libera</h2>
+            <p className="text-sm text-slate-400 mb-5">Dejanos tus datos y te mandamos un WhatsApp apenas alguien cancele el {fecha}.</p>
+            <form onSubmit={guardarListaEspera} className="space-y-4">
+              <div>
+                <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1 block">Nombre</label>
+                <input required type="text" value={datosEspera.nombre} onChange={e => setDatosEspera({...datosEspera, nombre: e.target.value})} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-slate-200 focus:outline-none focus:ring-1 focus:ring-emerald-500" placeholder="Ej. Juan Pérez" />
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1 block">Teléfono (WhatsApp)</label>
+                <input required type="tel" value={datosEspera.telefono} onChange={e => setDatosEspera({...datosEspera, telefono: e.target.value})} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-slate-200 focus:outline-none focus:ring-1 focus:ring-emerald-500" placeholder="Ej. 381 123 4567" />
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1 block">Rango horario preferido</label>
+                <input required type="text" value={datosEspera.rango} onChange={e => setDatosEspera({...datosEspera, rango: e.target.value})} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-slate-200 focus:outline-none focus:ring-1 focus:ring-emerald-500" placeholder="Ej. Después de las 18:00hs" />
+              </div>
+              <button type="submit" className="w-full bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-bold py-3 rounded-xl mt-2 transition-colors">Anotarme a la espera</button>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
