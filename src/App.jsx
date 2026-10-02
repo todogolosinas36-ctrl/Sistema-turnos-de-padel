@@ -44,8 +44,8 @@ function ClientIndex() {
 }
 
 function CancelarTurno() {
-  const { codigo } = useParams();
-  return <CancelacionView token={codigo} />;
+  const { codigo, id } = useParams();
+  return <CancelacionView token={codigo || id} />;
 }
 
 export default function App() {
@@ -61,6 +61,7 @@ export default function App() {
                   <Route path="/" element={<ClientLayout />}>
                     <Route index element={<ClientIndex />} />
                     <Route path="c/:codigo" element={<CancelarTurno />} />
+                    <Route path="turno/:id" element={<CancelarTurno />} />
                   </Route>
 
                   {/* Login Admin (público, fuera del layout protegido) */}
