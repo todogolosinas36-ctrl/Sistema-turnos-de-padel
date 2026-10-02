@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard,
@@ -22,6 +22,38 @@ import { useTurnos } from '../context/TurnosContext';
 import { useAuth } from '../context/AuthContext';
 import { useNotifications } from '../context/NotificationContext';
 import { themes } from '../utils/themeConfig';
+import { supabase } from '../lib/supabaseClient';
+
+const playCancelSound = () => {
+  try {
+    const AudioContext = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContext) return;
+    const ctx = new AudioContext();
+    
+    const playOsc = (freq, startTime, duration) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(freq, startTime);
+      
+      gain.gain.setValueAtTime(0.1, startTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, startTime + duration);
+      
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      
+      osc.start(startTime);
+      osc.stop(startTime + duration);
+    };
+
+    const now = ctx.currentTime;
+    playOsc(400, now, 0.15); // beep
+    playOsc(300, now + 0.2, 0.25); // boop (descendente)
+  } catch (err) {
+    console.error("Audio error", err);
+  }
+};
 
 const NAV_ITEMS = [
   { label: 'Dashboard', path: '/admin', icon: LayoutDashboard, exact: true },
@@ -145,13 +177,19 @@ export default function AdminLayout() {
   const location = useLocation();
   const navigate = useNavigate();
   const { theme } = useTheme();
-  const { nombreClub, colorClub, modoLocal, falla, recargar } = useTurnos();
+  const { nombreClub, colorClub, modoLocal, falla, recargar, canchas } = useTurnos();
   const { user, logout } = useAuth();
   const currentTheme = themes[theme] || themes.pro;
 
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [cerrandoSesion, setCerrandoSesion] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [cancelToast, setCancelToast] = useState(null);
+
+  const canchasRef = useRef(canchas);
+  useEffect(() => {
+    canchasRef.current = canchas;
+  }, [canchas]);
 
   const { notificaciones, limpiarNotificaciones } = useNotifications();
 
@@ -185,6 +223,58 @@ export default function AdminLayout() {
       window.removeEventListener('keydown', onKeyDown);
     };
   }, [drawerOpen]);
+
+  // Alerta sonora y visual de cancelación en vivo (Admin)
+  useEffect(() => {
+    if (modoLocal) return;
+
+    const adminChannel = supabase.channel('admin-cancellations')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'turnos' },
+        (payload) => {
+          let cancelledTurno = null;
+          
+          if (payload.eventType === 'DELETE') {
+            cancelledTurno = payload.old;
+          } else if (payload.eventType === 'UPDATE' && payload.new.estado?.toLowerCase() === 'cancelado') {
+            // Solo si cambió de estado a cancelado. Si ya estaba cancelado y se actualizó otra cosa, no hacer sonido.
+            // Para ser exactos, Supabase Postgres changes nos da payload.old si lo pedimos con REPLICA IDENTITY FULL, pero no siempre.
+            // Si llega un cancelado, mostramos alerta.
+            cancelledTurno = payload.new;
+          }
+
+          if (cancelledTurno) {
+            playCancelSound();
+            
+            const nombreCancha = canchasRef.current.find(c => c.id === cancelledTurno.cancha_id)?.nombre 
+                                || cancelledTurno.cancha_nombre 
+                                || 'Cancha';
+            const horario = cancelledTurno.hora_inicio ? cancelledTurno.hora_inicio.substring(0, 5) : '';
+            const titular = `${cancelledTurno.cliente_nombre || ''} ${cancelledTurno.cliente_apellido || ''}`.trim() || 'Titular';
+
+            setCancelToast({
+              id: Date.now(),
+              cancha: nombreCancha,
+              horario,
+              titular
+            });
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(adminChannel);
+    };
+  }, [modoLocal]);
+
+  useEffect(() => {
+    if (cancelToast) {
+      const timer = setTimeout(() => setCancelToast(null), 6000);
+      return () => clearTimeout(timer);
+    }
+  }, [cancelToast]);
 
   const handleLogout = async () => {
     setCerrandoSesion(true);
@@ -440,6 +530,34 @@ export default function AdminLayout() {
         <main className="flex-1 overflow-y-auto overscroll-contain-smooth flex flex-col p-4 sm:p-6 lg:p-8 pb-[calc(2rem+env(safe-area-inset-bottom,0px))]">
           <Outlet />
         </main>
+
+        {/* Toast de Cancelación en vivo */}
+        {cancelToast && (
+          <div className="fixed bottom-4 sm:bottom-8 right-4 sm:right-8 z-[99999] animate-in slide-in-from-bottom-5 fade-in duration-300">
+            <div className="bg-gradient-to-r from-red-600 to-red-500 text-white px-5 py-4 rounded-xl shadow-2xl shadow-red-500/20 flex items-center gap-4 max-w-sm border border-red-400/50">
+              <div className="bg-red-950/30 p-2 rounded-lg shrink-0">
+                <AlertTriangle className="w-6 h-6 text-red-100" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="font-extrabold text-sm leading-tight text-white drop-shadow-sm uppercase tracking-wide">
+                  ⚠️ Turno Cancelado
+                </p>
+                <p className="text-sm font-semibold text-red-100 mt-1 truncate">
+                  {cancelToast.cancha} - {cancelToast.horario} hs
+                </p>
+                <p className="text-xs font-medium text-red-200 truncate mt-0.5">
+                  Titular: {cancelToast.titular}
+                </p>
+              </div>
+              <button 
+                onClick={() => setCancelToast(null)}
+                className="shrink-0 p-1.5 hover:bg-red-700/50 rounded-lg transition-colors text-red-200 hover:text-white"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
