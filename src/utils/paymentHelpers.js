@@ -6,11 +6,15 @@ export function formatearMetodoPagoMixto(montos = {}) {
   const partes = [];
   const efec = Math.max(0, Math.round(Number(montos.efectivo) || 0));
   const transf = Math.max(0, Math.round(Number(montos.transferencia) || 0));
+  const deb = Math.max(0, Math.round(Number(montos.debito) || 0));
+  const cred = Math.max(0, Math.round(Number(montos.credito) || 0));
   const tarj = Math.max(0, Math.round(Number(montos.tarjeta) || 0));
 
   if (efec > 0) partes.push(`Efec: ${efec}`);
   if (transf > 0) partes.push(`Transf: ${transf}`);
-  if (tarj > 0) partes.push(`Tarjeta: ${tarj}`);
+  if (deb > 0) partes.push(`Débito: ${deb}`);
+  if (cred > 0) partes.push(`Crédito: ${cred}`);
+  if (tarj > 0 && deb === 0 && cred === 0) partes.push(`Tarjeta: ${tarj}`);
 
   if (partes.length === 0) return 'mixto';
   return `Mixto - ${partes.join(', ')}`;
@@ -19,8 +23,10 @@ export function formatearMetodoPagoMixto(montos = {}) {
 export function calcularTotalesMixtos(total, montos = {}) {
   const efec = Math.max(0, Number(montos.efectivo) || 0);
   const transf = Math.max(0, Number(montos.transferencia) || 0);
+  const deb = Math.max(0, Number(montos.debito) || 0);
+  const cred = Math.max(0, Number(montos.credito) || 0);
   const tarj = Math.max(0, Number(montos.tarjeta) || 0);
-  const suma = Math.round(efec + transf + tarj);
+  const suma = Math.round(efec + transf + deb + cred + tarj);
   const totalRedondeado = Math.round(Number(total) || 0);
   const restante = totalRedondeado - suma;
 
@@ -177,5 +183,183 @@ export function resolverMontoCanchaNeto(turno, precioBaseGlobal) {
   return Number.isFinite(Number(precioBaseGlobal)) && Number(precioBaseGlobal) > 0
     ? Math.round(Number(precioBaseGlobal))
     : 0;
+}
+
+/**
+ * Desglosa un monto monetario en las 4 categorías oficiales:
+ * Efectivo, Transferencia, Débito y Crédito.
+ *
+ * @param {number} monto - Total a desglosar
+ * @param {string} metodo - Identificador o detalle del método de pago
+ * @returns {{ efectivo: number, transferencia: number, debito: number, credito: number }}
+ */
+export function desglosarMetodosPago(monto, metodo) {
+  const total = Math.max(0, Math.round(Number(monto) || 0));
+  if (total === 0) {
+    return { efectivo: 0, transferencia: 0, debito: 0, credito: 0 };
+  }
+
+  const mStr = String(metodo || '').trim();
+
+  // Si es un Pago Mixto formateado con valores explícitos:
+  // e.g. "Mixto - Efec: 10000, Transf: 5000, Débito: 3000, Crédito: 2000"
+  if (mStr.toLowerCase().startsWith('mixto')) {
+    let efec = 0;
+    let transf = 0;
+    let deb = 0;
+    let cred = 0;
+
+    const matchEfec = mStr.match(/efec(?:tivo)?[:\s]+(\d+)/i);
+    const matchTransf = mStr.match(/transf(?:erencia)?[:\s]+(\d+)/i);
+    const matchDeb = mStr.match(/d[eé]b(?:ito)?[:\s]+(\d+)/i);
+    const matchCred = mStr.match(/cr[eé]d(?:ito)?[:\s]+(\d+)/i);
+    const matchTarj = mStr.match(/tarjeta[:\s]+(\d+)/i);
+
+    if (matchEfec) efec = parseInt(matchEfec[1], 10) || 0;
+    if (matchTransf) transf = parseInt(matchTransf[1], 10) || 0;
+    if (matchDeb) deb = parseInt(matchDeb[1], 10) || 0;
+    if (matchCred) cred = parseInt(matchCred[1], 10) || 0;
+    if (matchTarj && deb === 0 && cred === 0) {
+      deb = parseInt(matchTarj[1], 10) || 0;
+    }
+
+    const sumaParcial = efec + transf + deb + cred;
+    if (sumaParcial > 0) {
+      const remanente = total - sumaParcial;
+      if (remanente > 0) efec += remanente;
+      return { efectivo: efec, transferencia: transf, debito: deb, credito: cred };
+    }
+  }
+
+  const mNorm = mStr.toLowerCase();
+
+  if (mNorm.includes('transf') || mNorm.includes('mp') || mNorm.includes('mercado')) {
+    return { efectivo: 0, transferencia: total, debito: 0, credito: 0 };
+  }
+  if (mNorm.includes('cred') || mNorm.includes('créd')) {
+    return { efectivo: 0, transferencia: 0, debito: 0, credito: total };
+  }
+  if (mNorm.includes('deb') || mNorm.includes('déb') || mNorm.includes('tarjeta')) {
+    return { efectivo: 0, transferencia: 0, debito: total, credito: 0 };
+  }
+
+  // Por defecto (efectivo, en mano, o no especificado)
+  return { efectivo: total, transferencia: 0, debito: 0, credito: 0 };
+}
+
+/**
+ * Procesa y totaliza un conjunto de turnos pagados y ventas de cantina,
+ * consolidando los montos de Canchas vs Cantina y el desglose estricto
+ * por Efectivo, Transferencia, Débito y Crédito.
+ */
+export function calcularConsolidadoFinanciero(turnos = [], ventas = [], precioBaseGlobal = null) {
+  let totalCanchas = 0;
+  let totalCantinaTurnos = 0;
+  let totalCantinaMostrador = 0;
+
+  const desgloseMetodos = {
+    efectivo: { total: 0, canchas: 0, cantina: 0, cantidad: 0 },
+    transferencia: { total: 0, canchas: 0, cantina: 0, cantidad: 0 },
+    debito: { total: 0, canchas: 0, cantina: 0, cantidad: 0 },
+    credito: { total: 0, canchas: 0, cantina: 0, cantidad: 0 },
+  };
+
+  const acumularMetodo = (monto, metodoStr, origen = 'canchas') => {
+    if (!monto || monto <= 0) return;
+    const split = desglosarMetodosPago(monto, metodoStr);
+
+    for (const [metodo, val] of Object.entries(split)) {
+      if (val > 0) {
+        desgloseMetodos[metodo].total += val;
+        desgloseMetodos[metodo][origen] += val;
+        desgloseMetodos[metodo].cantidad += 1;
+      }
+    }
+  };
+
+  // 1. Procesar Turnos Pagados
+  const desgloseTurnos = (turnos || []).map((turno) => {
+    const { total: cantinaTotal, items: cantinaItems } = obtenerConsumoCantinaTurno(turno);
+    const montoCanchaNeto = resolverMontoCanchaNeto(turno, precioBaseGlobal);
+    const montoTotalTurno = montoCanchaNeto + cantinaTotal;
+
+    totalCanchas += montoCanchaNeto;
+    totalCantinaTurnos += cantinaTotal;
+
+    // Desglose por jugador si existe detalle_cobro
+    if (Array.isArray(turno.detalle_cobro) && turno.detalle_cobro.length > 0) {
+      const numJugadores = turno.detalle_cobro.length;
+      const cuotaCanchaPorJugador = Math.round(montoCanchaNeto / numJugadores);
+
+      for (const jug of turno.detalle_cobro) {
+        const metodoJug = jug.metodo_pago || jug.metodoPago || 'efectivo';
+        const kioscoJug = (jug.items || []).reduce(
+          (sum, it) => sum + (Number(it.precio) || 0) * (it.cantidad || 1),
+          0
+        );
+
+        acumularMetodo(cuotaCanchaPorJugador, metodoJug, 'canchas');
+        if (kioscoJug > 0) {
+          acumularMetodo(kioscoJug, metodoJug, 'cantina');
+        }
+      }
+
+      // Remanente de cantina en gastos compartidos no atribuido a items de jugador
+      const cantinaEnItems = turno.detalle_cobro.reduce(
+        (sum, j) =>
+          sum +
+          (j.items || []).reduce(
+            (s, it) => s + (Number(it.precio) || 0) * (it.cantidad || 1),
+            0
+          ),
+        0
+      );
+      const remanenteCantina = cantinaTotal - cantinaEnItems;
+      if (remanenteCantina > 0) {
+        acumularMetodo(remanenteCantina, turno.metodo_pago || 'efectivo', 'cantina');
+      }
+    } else {
+      // Turno cobrado globalmente sin split individual
+      const metodoGlobal = turno.metodo_pago || 'efectivo';
+      acumularMetodo(montoCanchaNeto, metodoGlobal, 'canchas');
+      if (cantinaTotal > 0) {
+        acumularMetodo(cantinaTotal, metodoGlobal, 'cantina');
+      }
+    }
+
+    return {
+      turno,
+      montoCanchaNeto,
+      cantinaTotal,
+      cantinaItems,
+      montoTotalTurno,
+    };
+  });
+
+  // 2. Procesar Ventas de Mostrador en Cantina
+  for (const v of ventas || []) {
+    const valTotal = Number(v.total) || 0;
+    totalCantinaMostrador += valTotal;
+    acumularMetodo(valTotal, v.metodo_pago || 'efectivo', 'cantina');
+  }
+
+  const totalCantina = totalCantinaMostrador + totalCantinaTurnos;
+  const totalGeneral = totalCanchas + totalCantina;
+
+  return {
+    totalGeneral,
+    totalCanchas,
+    totalCantina,
+    totalCantinaMostrador,
+    totalCantinaTurnos,
+    totalEfectivo: desgloseMetodos.efectivo.total,
+    totalTransferencia: desgloseMetodos.transferencia.total,
+    totalDebito: desgloseMetodos.debito.total,
+    totalCredito: desgloseMetodos.credito.total,
+    desgloseMetodos,
+    desgloseTurnos,
+    cantidadTurnos: (turnos || []).length,
+    cantidadVentasCantina: (ventas || []).length,
+  };
 }
 

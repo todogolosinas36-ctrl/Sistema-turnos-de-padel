@@ -28,7 +28,8 @@ import { formatearMetodoPagoMixto, calcularTotalesMixtos, resolverPrecioCancha }
 const METODOS_PAGO = [
   { id: 'efectivo', label: 'Efectivo', icon: Banknote },
   { id: 'transferencia', label: 'Transf / MP', icon: Smartphone },
-  { id: 'tarjeta', label: 'Tarjeta', icon: CreditCard },
+  { id: 'debito', label: 'Débito', icon: CreditCard },
+  { id: 'credito', label: 'Crédito', icon: CreditCard },
 ];
 
 export default function ModalCobro({ isOpen, onClose, turno, onConfirmarCobro }) {
@@ -66,6 +67,8 @@ export default function ModalCobro({ isOpen, onClose, turno, onConfirmarCobro })
   const [montosMixtos, setMontosMixtos] = useState({
     efectivo: '',
     transferencia: '',
+    debito: '',
+    credito: '',
     tarjeta: '',
   });
 
@@ -126,7 +129,7 @@ export default function ModalCobro({ isOpen, onClose, turno, onConfirmarCobro })
 
     setJugadorParaCobro(null);
     setMetodoPagoModal('efectivo');
-    setMontosMixtos({ efectivo: '', transferencia: '', tarjeta: '' });
+    setMontosMixtos({ efectivo: '', transferencia: '', debito: '', credito: '', tarjeta: '' });
   }, [isOpen, turno?.id, turno?.total_base_cancha, turno?.precio_total, turno?.precio, precioBaseCancha]);
 
   // Manejo de atajo Escape para cerrar sub-modales
@@ -1341,11 +1344,11 @@ export default function ModalCobro({ isOpen, onClose, turno, onConfirmarCobro })
                           )}
                         </div>
 
-                        {/* Tarjeta */}
+                        {/* Débito */}
                         <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 focus-within:border-slate-800 focus-within:ring-1 focus-within:ring-slate-800 transition-all">
-                          <CreditCard className="w-4 h-4 text-violet-600 shrink-0" />
+                          <CreditCard className="w-4 h-4 text-indigo-600 shrink-0" />
                           <label className="text-xs font-bold text-slate-700 w-24 shrink-0">
-                            Tarjeta
+                            Débito
                           </label>
                           <div className="flex-1 flex items-center justify-end gap-1">
                             <span className="text-slate-400 text-sm font-semibold">$</span>
@@ -1354,23 +1357,59 @@ export default function ModalCobro({ isOpen, onClose, turno, onConfirmarCobro })
                               inputMode="numeric"
                               min="0"
                               placeholder="0"
-                              value={montosMixtos.tarjeta}
+                              value={montosMixtos.debito}
                               onWheel={(e) => e.target.blur()}
                               onChange={(e) =>
-                                setMontosMixtos((prev) => ({ ...prev, tarjeta: e.target.value }))
+                                setMontosMixtos((prev) => ({ ...prev, debito: e.target.value }))
                               }
                               className="w-full text-right bg-transparent text-sm sm:text-base font-bold text-slate-900 focus:outline-none tabular-nums appearance-none [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none [-moz-appearance:_textfield]"
                             />
                           </div>
-                          {restante > 0 && Number(montosMixtos.tarjeta || 0) === 0 && (
+                          {restante > 0 && Number(montosMixtos.debito || 0) === 0 && (
                             <button
                               type="button"
                               onClick={() => {
-                                const faltante = totalJugador - (Number(montosMixtos.efectivo) || 0) - (Number(montosMixtos.transferencia) || 0);
-                                if (faltante > 0) setMontosMixtos((prev) => ({ ...prev, tarjeta: String(faltante) }));
+                                const faltante = totalJugador - (Number(montosMixtos.efectivo) || 0) - (Number(montosMixtos.transferencia) || 0) - (Number(montosMixtos.credito) || 0);
+                                if (faltante > 0) setMontosMixtos((prev) => ({ ...prev, debito: String(faltante) }));
                               }}
                               className="text-[10px] font-bold bg-slate-200 hover:bg-slate-300 text-slate-700 px-1.5 py-0.5 rounded cursor-pointer shrink-0 transition-colors"
-                              title="Cubrir restante con Tarjeta"
+                              title="Cubrir restante con Débito"
+                            >
+                              Resto
+                            </button>
+                          )}
+                        </div>
+
+                        {/* Crédito */}
+                        <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 focus-within:border-slate-800 focus-within:ring-1 focus-within:ring-slate-800 transition-all">
+                          <CreditCard className="w-4 h-4 text-amber-600 shrink-0" />
+                          <label className="text-xs font-bold text-slate-700 w-24 shrink-0">
+                            Crédito
+                          </label>
+                          <div className="flex-1 flex items-center justify-end gap-1">
+                            <span className="text-slate-400 text-sm font-semibold">$</span>
+                            <input
+                              type="number"
+                              inputMode="numeric"
+                              min="0"
+                              placeholder="0"
+                              value={montosMixtos.credito}
+                              onWheel={(e) => e.target.blur()}
+                              onChange={(e) =>
+                                setMontosMixtos((prev) => ({ ...prev, credito: e.target.value }))
+                              }
+                              className="w-full text-right bg-transparent text-sm sm:text-base font-bold text-slate-900 focus:outline-none tabular-nums appearance-none [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none [-moz-appearance:_textfield]"
+                            />
+                          </div>
+                          {restante > 0 && Number(montosMixtos.credito || 0) === 0 && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const faltante = totalJugador - (Number(montosMixtos.efectivo) || 0) - (Number(montosMixtos.transferencia) || 0) - (Number(montosMixtos.debito) || 0);
+                                if (faltante > 0) setMontosMixtos((prev) => ({ ...prev, credito: String(faltante) }));
+                              }}
+                              className="text-[10px] font-bold bg-slate-200 hover:bg-slate-300 text-slate-700 px-1.5 py-0.5 rounded cursor-pointer shrink-0 transition-colors"
+                              title="Cubrir restante con Crédito"
                             >
                               Resto
                             </button>

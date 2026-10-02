@@ -81,22 +81,17 @@ export default function ReservaModal({ isOpen, onClose, datosReserva, onSuccess 
     'w-full bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-3.5 text-zinc-900 font-medium placeholder-zinc-400 focus:outline-none focus:ring-2 focus:ring-zinc-900 focus:bg-white transition-all text-sm';
 
   return (
-    <div className="fixed inset-0 z-50 flex justify-center items-end sm:items-center">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       {/* Backdrop */}
       <div
-        className="absolute inset-0 bg-zinc-900/40 backdrop-blur-sm transition-opacity"
+        className="absolute inset-0 bg-zinc-900/50 backdrop-blur-xs transition-opacity"
         onClick={onClose}
       />
 
-      {/* Bottom Sheet / Modal */}
-      <div className="relative w-full max-w-md bg-white rounded-t-[2rem] sm:rounded-3xl shadow-2xl pb-safe mx-auto">
-        {/* Pill de arrastre */}
-        <div className="flex justify-center pt-4 pb-1">
-          <div className="w-12 h-1.5 bg-zinc-200 rounded-full" />
-        </div>
-
+      {/* Modal Card Centrada */}
+      <div className="relative w-full max-w-md bg-white rounded-3xl shadow-2xl my-auto max-h-[90vh] overflow-y-auto overscroll-contain-smooth animate-in fade-in zoom-in-95 duration-150">
         {paso === 1 ? (
-          <div className="px-8 pb-8 pt-4">
+          <div className="p-6 sm:p-8">
             {/* Encabezado */}
             <div className="flex items-center justify-between mb-6">
               <div>
@@ -200,7 +195,7 @@ export default function ReservaModal({ isOpen, onClose, datosReserva, onSuccess 
           </div>
         ) : (
           /* Paso 2: Confirmación */
-          <div className="px-8 pb-8 pt-4 text-center space-y-5">
+          <div className="p-6 sm:p-8 text-center space-y-5">
             <div className="w-16 h-16 bg-emerald-50 rounded-2xl flex items-center justify-center mx-auto">
               <CheckCircle className="w-9 h-9 text-emerald-500" />
             </div>

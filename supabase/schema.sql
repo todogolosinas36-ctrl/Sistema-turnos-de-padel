@@ -135,7 +135,7 @@ create table if not exists public.ventas_cantina (
 
 alter table public.ventas_cantina drop constraint if exists ventas_cantina_metodo_check;
 alter table public.ventas_cantina add constraint ventas_cantina_metodo_check
-  check (metodo_pago in ('efectivo', 'transferencia', 'tarjeta', 'mixto') or metodo_pago like 'Mixto%');
+  check (metodo_pago in ('efectivo', 'transferencia', 'tarjeta', 'debito', 'credito', 'mixto') or metodo_pago like 'Mixto%');
 
 create index if not exists ventas_cantina_fecha_idx on public.ventas_cantina (fecha);
 
@@ -241,3 +241,45 @@ create policy "ventas_cantina_detalle lectura pública"
 drop policy if exists "ventas_cantina_detalle insert sólo admin" on public.ventas_cantina_detalle;
 create policy "ventas_cantina_detalle insert sólo admin"
   on public.ventas_cantina_detalle for insert to authenticated with check (true);
+
+
+-- ────────────────────────────────────────────────────────────────────────────
+--  5) cierres_caja — Registro histórico y arqueo de cierres de caja (Cierre Z)
+-- ────────────────────────────────────────────────────────────────────────────
+create table if not exists public.cierres_caja (
+  id                      uuid primary key default gen_random_uuid(),
+  folio                   text not null,
+  fecha                   date not null default current_date,
+  hora_cierre             text not null,
+  fecha_cierre            timestamptz not null default now(),
+  periodo_desde           timestamptz,
+  periodo_hasta           timestamptz not null default now(),
+  total_general           integer not null default 0 check (total_general >= 0),
+  total_canchas           integer not null default 0 check (total_canchas >= 0),
+  total_cantina           integer not null default 0 check (total_cantina >= 0),
+  total_cantina_mostrador integer not null default 0 check (total_cantina_mostrador >= 0),
+  total_cantina_turnos    integer not null default 0 check (total_cantina_turnos >= 0),
+  total_efectivo          integer not null default 0 check (total_efectivo >= 0),
+  total_transferencia     integer not null default 0 check (total_transferencia >= 0),
+  total_debito            integer not null default 0 check (total_debito >= 0),
+  total_credito           integer not null default 0 check (total_credito >= 0),
+  cantidad_turnos         integer not null default 0,
+  cantidad_ventas_cantina integer not null default 0,
+  observaciones           text,
+  cerrado_por             text,
+  creado_el               timestamptz not null default now()
+);
+
+create index if not exists cierres_caja_fecha_idx on public.cierres_caja (fecha);
+create index if not exists cierres_caja_creado_el_idx on public.cierres_caja (creado_el);
+
+alter table public.cierres_caja enable row level security;
+
+drop policy if exists "cierres_caja lectura pública" on public.cierres_caja;
+create policy "cierres_caja lectura pública"
+  on public.cierres_caja for select to anon, authenticated using (true);
+
+drop policy if exists "cierres_caja insert pública" on public.cierres_caja;
+create policy "cierres_caja insert pública"
+  on public.cierres_caja for insert to anon, authenticated with check (true);
+
