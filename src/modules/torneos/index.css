@@ -1,0 +1,31 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  body {
+    @apply bg-slate-100 font-sans text-slate-900 antialiased;
+  }
+
+  /* Los numeros de la tabla de posiciones deben alinearse en columna. */
+  .tabular-nums {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+@layer utilities {
+  /* Scroll discreto para la grilla del cronograma y el bracket. */
+  .scroll-fino::-webkit-scrollbar {
+    @apply h-2 w-2;
+  }
+  .scroll-fino::-webkit-scrollbar-thumb {
+    @apply rounded-full bg-slate-300;
+  }
+  .scroll-fino::-webkit-scrollbar-track {
+    @apply bg-transparent;
+  }
+}

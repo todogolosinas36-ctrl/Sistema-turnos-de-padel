@@ -15,6 +15,7 @@ import {
   Coffee,
   AlertTriangle,
   CheckCheck,
+  Trophy,
 } from 'lucide-react';
 import LogoPadel from '../components/LogoPadel';
 import { useTheme } from '../context/ThemeContext';
@@ -84,6 +85,7 @@ const NAV_ITEMS = [
   { label: 'Artículos', path: '/admin/articulos', icon: Package },
   { label: 'Turnos Fijos', path: '/admin/turnos-fijos', icon: CalendarRange },
   { label: 'Caja Diaria', path: '/admin/caja', icon: Wallet },
+  { label: 'Torneos', path: '/admin/torneos', icon: Trophy },
   { label: 'Configuración', path: '/admin/configuracion', icon: Settings },
 ];
 
@@ -94,6 +96,7 @@ const getPageTitle = (pathname) => {
   if (pathname.includes('articulos')) return 'Gestor de Artículos';
   if (pathname.includes('turnos-fijos')) return 'Turnos Fijos (Abonos)';
   if (pathname.includes('caja')) return 'Caja Diaria';
+  if (pathname.includes('torneos')) return 'Torneos';
   if (pathname.includes('configuracion')) return 'Configuración';
   return 'Panel de Administración';
 };
@@ -135,7 +138,7 @@ function SidebarContent({ currentTheme, onNavigate, showCloseButton, onClose }) 
       </div>
 
       {/* Navegación */}
-      <nav className="flex-1 py-3 sm:py-4 overflow-y-auto overscroll-contain-smooth">
+      <nav className="flex-1 py-3 sm:py-4 overflow-y-auto overscroll-contain-smooth [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
         <ul className="space-y-0.5 px-3 sm:px-0">
           {NAV_ITEMS.map(({ label, path, icon: Icon, exact }) => {
             const isActive = exact
@@ -331,7 +334,7 @@ export default function AdminLayout() {
   };
 
   return (
-    <div className="flex h-safe-full bg-punto-surface font-sans overflow-hidden antialiased">
+    <div className="flex h-screen bg-punto-surface font-sans overflow-hidden antialiased">
       {/* ─── Sidebar Desktop (lg+) ─── */}
       <aside
         className={`hidden lg:flex w-72 flex-col shrink-0 shadow-xl z-20 transition-colors duration-300 ${currentTheme.sidebar}`}
@@ -568,7 +571,7 @@ export default function AdminLayout() {
         )}
 
         {/* Contenido (Outlet) */}
-        <main className="flex-1 overflow-y-auto overscroll-contain-smooth flex flex-col p-4 sm:p-6 lg:p-8 pb-[calc(2rem+env(safe-area-inset-bottom,0px))]">
+        <main className="flex-1 overflow-y-auto overscroll-contain-smooth flex flex-col p-4 sm:p-6 lg:p-8 pb-[calc(2rem+env(safe-area-inset-bottom,0px))] [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
           <Outlet />
         </main>
 

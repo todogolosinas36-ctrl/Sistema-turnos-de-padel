@@ -22,6 +22,7 @@ const Cantina = lazy(() => import('./pages/admin/Cantina'));
 const CajaDiaria = lazy(() => import('./pages/admin/CajaDiaria'));
 const TurnosFijos = lazy(() => import('./pages/admin/TurnosFijos'));
 const Configuracion = lazy(() => import('./pages/admin/Configuracion'));
+const TorneosModule = lazy(() => import('./modules/torneos/App'));
 
 function PantallaCarga() {
   return (
@@ -84,6 +85,7 @@ export default function App() {
                     <Route path="cantina" element={<Cantina />} />
                     <Route path="turnos-fijos" element={<TurnosFijos />} />
                     <Route path="caja" element={<CajaDiaria />} />
+                    <Route path="torneos/*" element={<TorneosModule />} />
                     <Route path="configuracion" element={<Configuracion />} />
                   </Route>
                 </Routes>
