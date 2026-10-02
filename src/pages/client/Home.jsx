@@ -58,7 +58,7 @@ export default function Home() {
   const [fecha, setFecha] = useState(hoyISO);
   const [duracion, setDuracion] = useState(90);
   const [reservaActiva, setReservaActiva] = useState(null);
-  const ultimosTurnosOcupadosRef = useRef(null);
+  const toastDebounceRef = useRef(false);
   const [cartelLateralVisible, setCartelLateralVisible] = useState(false);
   const [mostrarAvisoLiberacion, setMostrarAvisoLiberacion] = useState(false);
   const [datosEspera, setDatosEspera] = useState({ nombre: '', telefono: '', rango: '' });
@@ -124,7 +124,7 @@ export default function Home() {
     }
   }, [reservaActiva, miIdTemporal]);
 
-  // 1. Escucha Realtime directa
+  // Escucha Realtime directa
   useEffect(() => {
     const canal = supabase
       .channel(`cliente-sync-${Date.now()}`)
@@ -135,40 +135,36 @@ export default function Home() {
           console.log('🚨 CAMBIO DETECTADO EN TURNOS:', payload);
           // Si borraron un turno o cancelaron uno
           if (payload.eventType === 'DELETE' || payload.new?.estado === 'cancelado') {
-            setCartelLateralVisible(true);
+            
+            // 1. Limpiar bloqueo local inmediatamente para liberar el botón
+            const turnoCanchaId = payload.old?.cancha_id || payload.new?.cancha_id;
+            const turnoHora = (payload.old?.hora_inicio || payload.new?.hora_inicio)?.substring(0, 5);
+            if (turnoCanchaId && turnoHora) {
+               setBloquesEnProceso(prev => {
+                  const newSet = new Set(prev);
+                  newSet.delete(`${turnoCanchaId}-${turnoHora}`);
+                  return newSet;
+               });
+            }
+
+            // 2. Debounce de 2s y actualización silenciosa
+            if (!toastDebounceRef.current) {
+              setCartelLateralVisible(true);
+              toastDebounceRef.current = true;
+              if (recargar) recargar(true); // Actualización automática de fondo
+              setTimeout(() => {
+                toastDebounceRef.current = false;
+              }, 2000);
+            }
           }
         }
       )
       .subscribe();
 
-    // 2. Respaldo: Polling de chequeo rápido cada 8 segundos
-    const intervalo = setInterval(async () => {
-      try {
-        const { data, error } = await supabase
-          .from('turnos')
-          .select('id, estado')
-          .neq('estado', 'cancelado');
-
-        if (!error && data) {
-          if (ultimosTurnosOcupadosRef.current !== null) {
-            // Si antes había más turnos ocupados que ahora -> SE LIBERÓ UNO
-            if (data.length < ultimosTurnosOcupadosRef.current) {
-              console.log('🔔 Turno liberado detectado por sincronización de fondo');
-              setCartelLateralVisible(true);
-            }
-          }
-          ultimosTurnosOcupadosRef.current = data.length;
-        }
-      } catch (err) {
-        console.error('Error sincronizando turnos:', err);
-      }
-    }, 8000);
-
     return () => {
       supabase.removeChannel(canal);
-      clearInterval(intervalo);
     };
-  }, []);
+  }, [recargar]);
 
   const guardarListaEspera = async (e) => {
     e.preventDefault();
