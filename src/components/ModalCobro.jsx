@@ -861,7 +861,7 @@ export default function ModalCobro({ isOpen, onClose, turno, onConfirmarCobro })
                           title={jugador.pagado ? jugador.nombre : 'Hacé clic para editar el nombre'}
                           className={`group/name flex items-center gap-1.5 min-w-0 ${!jugador.pagado ? 'cursor-pointer' : ''}`}
                         >
-                          <span className="font-bold text-slate-900 text-sm truncate group-hover/name:text-blue-600 transition-colors">
+                          <span className="font-bold text-slate-900 text-sm truncate group-hover/name:text-blue-600 transition-colors capitalize">
                             {jugador.nombre}
                           </span>
                           {!jugador.pagado && (

@@ -261,7 +261,7 @@ export default function Dashboard() {
                 </div>
 
                 <div className="flex-1 min-w-0">
-                  <p className="font-bold text-slate-900 text-sm truncate">
+                  <p className="font-bold text-slate-900 text-sm truncate capitalize">
                     {item.cliente}
                     {item.monto != null && (
                       <span className="ml-2 text-emerald-600 tabular-nums">
@@ -270,7 +270,7 @@ export default function Dashboard() {
                     )}
                   </p>
                   <p className="text-xs text-slate-500 truncate">
-                    {item.cancha} · {item.fecha} {item.hora} hs ·{' '}
+                    <span className="capitalize">{item.cancha}</span> · {item.fecha} {item.hora} hs ·{' '}
                     {new Date(item.cuando).toLocaleString('es-AR', {
                       day: '2-digit',
                       month: 'short',

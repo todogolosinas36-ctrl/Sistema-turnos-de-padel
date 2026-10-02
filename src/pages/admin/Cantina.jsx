@@ -330,7 +330,7 @@ export default function Cantina() {
                 key={cat}
                 type="button"
                 onClick={() => setCategoriaSeleccionada(cat)}
-                className={`px-3.5 py-1.5 text-xs font-bold rounded-lg transition-all whitespace-nowrap cursor-pointer ${
+                className={`px-3.5 py-1.5 text-xs font-bold rounded-lg transition-all whitespace-nowrap cursor-pointer capitalize ${
                   categoriaSeleccionada === cat
                     ? 'bg-slate-900 text-white shadow-sm'
                     : 'bg-white text-slate-600 border border-zinc-200 hover:bg-slate-50 hover:text-slate-900'
@@ -429,10 +429,10 @@ export default function Cantina() {
                       
                       <div className="min-w-0 flex-1 flex flex-col justify-center">
                         <div className="flex items-center gap-2 mb-0.5 flex-wrap">
-                          <h3 className="font-bold text-slate-900 text-sm leading-tight group-hover:text-blue-600 transition-colors truncate max-w-full">
+                          <h3 className="font-bold text-slate-900 text-sm leading-tight group-hover:text-blue-600 transition-colors truncate max-w-full capitalize">
                             {prod.nombre}
                           </h3>
-                          <span className="px-1.5 py-0.5 text-[9px] font-bold tracking-wider text-slate-500 uppercase bg-slate-100 rounded-md shrink-0">
+                          <span className="px-1.5 py-0.5 text-[9px] font-bold tracking-wider text-slate-500 uppercase bg-slate-100 rounded-md shrink-0 capitalize">
                             {prod.categoria}
                           </span>
                         </div>
@@ -506,7 +506,7 @@ export default function Cantina() {
                     }`}
                   >
                     <div className="flex-1 min-w-0">
-                      <p className="font-bold text-slate-900 text-sm truncate">{item.nombre}</p>
+                      <p className="font-bold text-slate-900 text-sm truncate capitalize">{item.nombre}</p>
                       <p className="text-xs text-slate-500 font-medium">
                         {formatearPrecio(item.precio)} c/u
                       </p>

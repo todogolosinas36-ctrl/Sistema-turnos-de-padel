@@ -2,6 +2,7 @@ import { createContext, useContext, useState, useEffect, useCallback } from 'rea
 import { supabase } from '../lib/supabaseClient';
 import { clasificarErrorSupabase } from '../lib/erroresSupabase';
 import { normalizarHora } from '../utils/dateHelpers';
+import { capitalizarPalabras } from '../utils/formatters';
 
 const TurnosContext = createContext();
 
@@ -100,8 +101,8 @@ const camposTurno = (t) => ({
   hora_inicio: t.hora_inicio,
   hora_fin: t.hora_fin || null,
   duracion_minutos: Number(t.duracion_minutos) || 90,
-  cliente_nombre: t.cliente_nombre || '',
-  cliente_apellido: t.cliente_apellido || '',
+  cliente_nombre: capitalizarPalabras(t.cliente_nombre) || '',
+  cliente_apellido: capitalizarPalabras(t.cliente_apellido) || '',
   cliente_telefono: t.cliente_telefono || '',
   estado: t.estado || 'confirmado',
   origen: t.origen || 'admin',
@@ -508,7 +509,7 @@ export function TurnosProvider({ children }) {
         hora_inicio: datos.horario || datos.hora_inicio,
         duracion_minutos: Number(datos.duracion) || Number(datos.duracion_minutos) || 120,
         cancha_id: datos.cancha_id,
-        cliente: (datos.cliente || '').trim(),
+        cliente: capitalizarPalabras(datos.cliente || ''),
         telefono: (datos.telefono || '').trim() || null,
         activo: datos.activo !== false,
         notas: datos.notas || null,
@@ -553,7 +554,7 @@ export function TurnosProvider({ children }) {
       if (cambios.horario !== undefined) payload.hora_inicio = cambios.horario;
       if (cambios.duracion !== undefined) payload.duracion_minutos = Number(cambios.duracion);
       if (cambios.cancha_id !== undefined) payload.cancha_id = cambios.cancha_id;
-      if (cambios.cliente !== undefined) payload.cliente = cambios.cliente.trim();
+      if (cambios.cliente !== undefined) payload.cliente = capitalizarPalabras(cambios.cliente);
       if (cambios.telefono !== undefined) payload.telefono = cambios.telefono.trim() || null;
 
       if (!modoLocal && Object.keys(payload).length > 0) {

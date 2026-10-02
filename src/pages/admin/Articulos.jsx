@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react';
 import { useArticulos } from '../../context/ArticulosContext';
+import { capitalizarPalabras } from '../../utils/formatters';
 import {
   Package,
   Plus,
@@ -72,9 +73,9 @@ export default function Articulos() {
 
     setGuardando(true);
     const payload = {
-      nombre: formNombre.trim(),
+      nombre: capitalizarPalabras(formNombre),
       precio: Number(formPrecio) || 0,
-      categoria: formCategoria,
+      categoria: capitalizarPalabras(formCategoria),
       codigoBarras: formCodigoBarras.trim(),
       stock: Number(formStock) || 0,
     };
@@ -260,7 +261,7 @@ export default function Articulos() {
                         <Tag className="w-4 h-4" />
                       </div>
                       <div className="min-w-0 flex-1">
-                        <p className="font-bold text-slate-900 text-sm leading-tight break-words">
+                        <p className="font-bold text-slate-900 text-sm leading-tight break-words capitalize">
                           {art.nombre}
                         </p>
                         <div className="flex items-center gap-2 mt-1.5 flex-wrap">
@@ -349,11 +350,11 @@ export default function Articulos() {
                               <Tag className="w-4 h-4" />
                             </div>
                             <div>
-                              <span className="font-bold text-slate-900 text-sm block leading-tight">
+                              <span className="font-bold text-slate-900 text-sm block leading-tight capitalize">
                                 {art.nombre}
                               </span>
                               {art.categoria && (
-                                <span className="text-[11px] text-slate-400 font-medium">
+                                <span className="text-[11px] text-slate-400 font-medium capitalize">
                                   {art.categoria}
                                 </span>
                               )}

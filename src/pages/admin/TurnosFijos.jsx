@@ -199,7 +199,7 @@ export default function TurnosFijos() {
                         {turno.duracion_minutos} min
                       </span>
                     </p>
-                    <p className="text-xs font-semibold text-slate-700 mt-1.5 truncate">
+                    <p className="text-xs font-semibold text-slate-700 mt-1.5 truncate capitalize">
                       {turno.cliente}
                     </p>
                     <div className="flex items-center gap-2 text-xs text-slate-500 mt-1 flex-wrap">
@@ -320,7 +320,7 @@ export default function TurnosFijos() {
                         <div className="w-7 h-7 rounded-full bg-slate-100 text-slate-600 flex items-center justify-center text-[10px] font-black shrink-0">
                           {turno.cliente.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)}
                         </div>
-                        <span className="font-bold text-slate-900 text-sm">{turno.cliente}</span>
+                        <span className="font-bold text-slate-900 text-sm capitalize">{turno.cliente}</span>
                       </div>
                     </td>
                     <td className="px-6 py-4">

@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useTurnos } from '../context/TurnosContext';
 import { calcularHoraFin } from '../utils/timeCalculations';
+import { capitalizarPalabras } from '../utils/formatters';
 import { MessageCircle, CheckCircle, X, CalendarDays, Clock, AlertTriangle } from 'lucide-react';
 
 export default function ReservaModal({ isOpen, onClose, datosReserva, onSuccess }) {
@@ -92,12 +93,34 @@ export default function ReservaModal({ isOpen, onClose, datosReserva, onSuccess 
   };
 
   const numeroWhatsApp = import.meta.env.VITE_WHATSAPP_COMPLEJO || '';
-  const nombreComplejo = import.meta.env.VITE_NOMBRE_COMPLEJO || 'el complejo';
+  const nombreComplejo = import.meta.env.VITE_NOMBRE_COMPLEJO || '20/10 PÁDEL';
 
-  let mensajeWhatsApp = `Hola ${nombreComplejo}, soy ${nombre.trim()}. Reservé el turno en ${cancha?.nombre} para el ${fecha} a las ${horaInicio} hs. ¡Nos vemos!`;
-  if (turnoInsertado?.token_cancelacion) {
-    mensajeWhatsApp += `\n\nPara cancelar en caso de imprevisto: ${window.location.origin}/?token=${turnoInsertado.token_cancelacion}`;
+  const precioFormateado = precioBaseCancha
+    ? new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 0 }).format(precioBaseCancha)
+    : 'A confirmar';
+
+  let fechaFormateada = fecha;
+  if (fecha && fecha.includes('-')) {
+    const [y, m, d] = fecha.split('-');
+    fechaFormateada = `${d}/${m}/${y}`;
   }
+
+  const turnoId = turnoInsertado?.token_cancelacion || turnoInsertado?.id || '';
+  const linkGestion = `https://sistema-turnos-de-padel.onrender.com/turno/${turnoId}`;
+
+  const mensajeWhatsApp = `🎾 *NUEVA RESERVA - ${nombreComplejo.toUpperCase()}* 🎾
+
+👤 *Cliente:* ${capitalizarPalabras(nombre)}
+📱 *Teléfono:* ${telefono}
+🏟 *Cancha:* ${cancha?.nombre}
+🗓 *Fecha:* ${fechaFormateada}
+⏰ *Horario:* ${horaInicio} hs
+💵 *Valor:* ${precioFormateado}
+
+🔗 *Gestionar o Cancelar mi Turno:*
+${linkGestion}
+*(Las cancelaciones solo se permiten con al menos 2 horas de anticipación)*`;
+
   const urlWhatsApp = `https://wa.me/${numeroWhatsApp.replace(/\D/g, '')}?text=${encodeURIComponent(mensajeWhatsApp)}`;
 
   const inputClass =
