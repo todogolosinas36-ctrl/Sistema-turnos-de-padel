@@ -15,11 +15,14 @@ export default function CancelacionView({ token }) {
       setError(null);
 
       try {
-        const { data, error: queryError } = await supabase
-          .from('turnos')
-          .select('*, canchas(nombre)')
-          .or(`token_cancelacion.eq.${token},codigo_cancelacion.eq.${token}`)
-          .maybeSingle();
+        let query = supabase.from('turnos').select('*, canchas(nombre)');
+        if (token.length > 20) {
+          query = query.or(`token_cancelacion.eq.${token},id.eq.${token}`);
+        } else {
+          query = query.eq('codigo_cancelacion', token);
+        }
+        
+        const { data, error: queryError } = await query.maybeSingle();
 
         if (queryError || !data) {
           setError('Turno no encontrado o token inválido');
