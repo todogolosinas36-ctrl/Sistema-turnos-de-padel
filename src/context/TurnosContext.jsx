@@ -395,6 +395,7 @@ export function TurnosProvider({ children }) {
         return null;
       }
 
+      console.log('✅ [Supabase] Turno actualizado/cancelado con éxito:', data);
       if (data) setTurnos((prev) => prev.map((t) => (t.id === id ? normalizarTurno(data) : t)));
       return data;
     },
@@ -489,10 +490,12 @@ export function TurnosProvider({ children }) {
   const eliminarTurno = useCallback(
     async (id) => {
       if (!modoLocal) {
-        const { error } = await supabase.from('turnos').delete().eq('id', id);
+        const { data, error } = await supabase.from('turnos').delete().eq('id', id).select();
         if (error) {
           console.error('[Turnos] No se pudo eliminar el turno:', error.message);
           setFalla((prev) => prev || clasificarErrorSupabase(error));
+        } else {
+          console.log('✅ [Supabase] Turno eliminado con éxito:', data);
         }
       }
       setTurnos((prev) => prev.filter((t) => t.id !== id));

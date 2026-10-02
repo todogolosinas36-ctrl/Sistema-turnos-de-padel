@@ -84,33 +84,35 @@ export default function Home() {
 
   // Suscripción Realtime Pública para actualización instantánea
   useEffect(() => {
-    const channel = supabase
-      .channel('cliente-turnos-liberados')
+    const channelName = `cliente-turnos-${Math.random().toString(36).substring(2, 9)}`;
+    const canal = supabase
+      .channel(channelName)
       .on(
         'postgres_changes',
-        { event: 'DELETE', schema: 'public', table: 'turnos' },
+        { event: '*', schema: 'public', table: 'turnos' },
         (payload) => {
-          console.log('Turno eliminado/liberado:', payload);
-          setAvisoLiberado(true);
-        }
-      )
-      .on(
-        'postgres_changes',
-        { event: 'UPDATE', schema: 'public', table: 'turnos' },
-        (payload) => {
-          // Si el estado cambió a 'cancelado' o 'disponible'
-          if (payload.new && (payload.new.estado === 'cancelado' || payload.new.activo === false)) {
-            console.log('Turno cancelado/liberado:', payload);
+          console.log('🚨 [REALTIME CLIENTE] Evento recibido:', payload.eventType, payload);
+
+          // Disparar ante cualquier eliminación o actualización
+          if (payload.eventType === 'DELETE') {
             setAvisoLiberado(true);
+          } else if (payload.eventType === 'UPDATE') {
+            // Aceptar cancelado, disponible o cambio de titular nulo
+            const estado = payload.new?.estado?.toLowerCase();
+            if (estado === 'cancelado' || estado === 'disponible' || !payload.new?.titular) {
+              setAvisoLiberado(true);
+            }
           }
         }
       )
-      .subscribe((status) => {
-        console.log('Estado suscripción Realtime cliente:', status);
+      .subscribe((status, error) => {
+        console.log(`🔌 [REALTIME CLIENTE] Estado de conexión: ${status}`);
+        if (error) console.error('❌ Error de suscripción:', error);
       });
 
     return () => {
-      supabase.removeChannel(channel);
+      console.log('🧹 Limpiando canal realtime...');
+      supabase.removeChannel(canal);
     };
   }, []);
 
@@ -188,7 +190,7 @@ export default function Home() {
       
       {/* Toast de Oportunidad (Realtime) */}
       {avisoLiberado && (
-        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[100] animate-in slide-in-from-top fade-in duration-300 w-[95vw] max-w-md">
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[99999] animate-in slide-in-from-top fade-in duration-300 w-[95vw] max-w-md">
           <div className="bg-slate-900/90 backdrop-blur-md border border-emerald-500/30 text-white px-5 py-4 rounded-2xl shadow-2xl shadow-emerald-500/10 flex flex-col sm:flex-row items-center gap-4">
             <div className="flex items-center gap-3 w-full sm:w-auto">
               <div className="bg-emerald-500/10 p-2 rounded-xl shrink-0">
