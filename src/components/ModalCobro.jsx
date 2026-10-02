@@ -54,6 +54,11 @@ export default function ModalCobro({ isOpen, onClose, turno, onConfirmarCobro })
 
   // Estado de cada jugador
   const [jugadores, setJugadores] = useState([]);
+  // Caché de jugadores para preservar datos (nombre, itemsKiosco, pagado, etc.) al cambiar la división
+  const jugadoresPoolRef = useRef(new Map());
+  // Edición rápida de nombre de jugador
+  const [editandoNombreId, setEditandoNombreId] = useState(null);
+  const [nombreEnEdicion, setNombreEnEdicion] = useState('');
 
   // Sub-modal buscador rápido de Kiosco
   const [jugadorKioscoActivo, setJugadorKioscoActivo] = useState(null);
@@ -72,23 +77,43 @@ export default function ModalCobro({ isOpen, onClose, turno, onConfirmarCobro })
     tarjeta: '',
   });
 
-  // Inicializar o ajustar jugadores cuando cambia la división
+  // Mantener actualizado el pool de jugadores con cada cambio en los jugadores actuales
+  useEffect(() => {
+    jugadores.forEach((j) => {
+      jugadoresPoolRef.current.set(j.id, j);
+    });
+  }, [jugadores]);
+
+  // Inicializar o ajustar jugadores cuando cambia la división dinámicamente
   useEffect(() => {
     if (!turno) return;
+    if (division === '' || isNaN(parseInt(division, 10))) return;
+    const cant = Math.max(1, parseInt(division, 10));
+
+    const nombreTitular = turno.cliente_nombre
+      ? `${turno.cliente_nombre} ${turno.cliente_apellido || ''}`.trim()
+      : 'Jugador 1';
+
     setJugadores((prev) => {
+      // Si la cantidad coincide y ya tenemos los mismos jugadores, no regenerar innecesariamente
+      if (prev.length === cant && prev.every((j, idx) => j.id === idx + 1)) return prev;
+
       const nuevoArray = [];
-      for (let i = 1; i <= division; i++) {
-        const existente = prev.find((j) => j.id === i);
+      for (let i = 1; i <= cant; i++) {
+        const existente = prev.find((j) => j.id === i) || jugadoresPoolRef.current.get(i);
         if (existente) {
           nuevoArray.push(existente);
+          jugadoresPoolRef.current.set(i, existente);
         } else {
-          nuevoArray.push({
+          const nuevoJugador = {
             id: i,
-            nombre: i === 1 && turno.cliente_nombre ? `${turno.cliente_nombre} ${turno.cliente_apellido || ''}`.trim() : `Jugador ${i}`,
+            nombre: i === 1 ? nombreTitular : `Jugador ${i}`,
             itemsKiosco: [],
             pagado: false,
             metodoPago: 'efectivo',
-          });
+          };
+          nuevoArray.push(nuevoJugador);
+          jugadoresPoolRef.current.set(i, nuevoJugador);
         }
       }
       return nuevoArray;
@@ -110,21 +135,38 @@ export default function ModalCobro({ isOpen, onClose, turno, onConfirmarCobro })
     setJugadorKioscoActivo(null);
     setBusquedaKiosco('');
     setAvisoStock(null);
+    setEditandoNombreId(null);
+    setNombreEnEdicion('');
+
+    // Resetear el pool de jugadores para este turno
+    jugadoresPoolRef.current.clear();
+
+    const nombreTitular = turno.cliente_nombre
+      ? `${turno.cliente_nombre} ${turno.cliente_apellido || ''}`.trim()
+      : 'Jugador 1';
 
     // Restaurar jugadores si ya existen en detalle_cobro
     if (Array.isArray(turno.detalle_cobro) && turno.detalle_cobro.length > 0) {
-      setDivision(turno.detalle_cobro.length);
-      setJugadores(
-        turno.detalle_cobro.map((j) => ({
-          id: j.id,
-          nombre: j.nombre || `Jugador ${j.id}`,
-          itemsKiosco: Array.isArray(j.items) ? j.items : [],
-          pagado: Boolean(j.pagado),
-          metodoPago: j.metodo_pago || 'efectivo',
-        }))
-      );
+      const listaRestaurada = turno.detalle_cobro.map((j) => ({
+        id: j.id,
+        nombre: j.nombre || (j.id === 1 ? nombreTitular : `Jugador ${j.id}`),
+        itemsKiosco: Array.isArray(j.items) ? j.items : [],
+        pagado: Boolean(j.pagado),
+        metodoPago: j.metodo_pago || 'efectivo',
+      }));
+      setDivision(listaRestaurada.length);
+      setJugadores(listaRestaurada);
+      listaRestaurada.forEach((j) => jugadoresPoolRef.current.set(j.id, j));
     } else {
       setDivision(4);
+      const listaInicial = [
+        { id: 1, nombre: nombreTitular, itemsKiosco: [], pagado: false, metodoPago: 'efectivo' },
+        { id: 2, nombre: 'Jugador 2', itemsKiosco: [], pagado: false, metodoPago: 'efectivo' },
+        { id: 3, nombre: 'Jugador 3', itemsKiosco: [], pagado: false, metodoPago: 'efectivo' },
+        { id: 4, nombre: 'Jugador 4', itemsKiosco: [], pagado: false, metodoPago: 'efectivo' },
+      ];
+      setJugadores(listaInicial);
+      listaInicial.forEach((j) => jugadoresPoolRef.current.set(j.id, j));
     }
 
     setJugadorParaCobro(null);
@@ -160,10 +202,13 @@ export default function ModalCobro({ isOpen, onClose, turno, onConfirmarCobro })
     }
   }, [jugadorKioscoActivo]);
 
+  // Cantidad de división normalizada para cálculos
+  const cantDivision = Math.max(1, parseInt(division, 10) || 1);
+
   // Cálculo de totales compartidos
   const totalGastosExtra = gastosCompartidos.reduce((sum, g) => sum + g.monto, 0);
   const totalCanchaYGastos = (Number(totalBaseCancha) || 0) + totalGastosExtra;
-  const cuotaCanchaPorJugador = Math.round(totalCanchaYGastos / division);
+  const cuotaCanchaPorJugador = Math.round(totalCanchaYGastos / cantDivision);
 
   // Total de kiosco general
   const totalKioscoGeneral = jugadores.reduce(
@@ -355,6 +400,32 @@ export default function ModalCobro({ isOpen, onClose, turno, onConfirmarCobro })
         };
       })
     );
+  };
+
+  // Edición de nombres de jugadores para Split Payment
+  const iniciarEdicionNombre = (jugador) => {
+    if (jugador.pagado) return;
+    setEditandoNombreId(jugador.id);
+    setNombreEnEdicion(jugador.nombre);
+  };
+
+  const guardarNombreJugador = (jugadorId) => {
+    const nombreTitular = turno?.cliente_nombre
+      ? `${turno.cliente_nombre} ${turno.cliente_apellido || ''}`.trim()
+      : 'Jugador 1';
+    const fallbackNombre = jugadorId === 1 ? nombreTitular : `Jugador ${jugadorId}`;
+    const nombreFinal = nombreEnEdicion.trim() || fallbackNombre;
+
+    setJugadores((prev) =>
+      prev.map((j) => {
+        if (j.id !== jugadorId) return j;
+        const actualizado = { ...j, nombre: nombreFinal };
+        jugadoresPoolRef.current.set(jugadorId, actualizado);
+        return actualizado;
+      })
+    );
+    setEditandoNombreId(null);
+    setNombreEnEdicion('');
   };
 
   // Descuenta el stock de todo lo que se cobró. Se llama UNA vez, cuando el
@@ -633,28 +704,67 @@ export default function ModalCobro({ isOpen, onClose, turno, onConfirmarCobro })
               </div>
             </div>
 
-            {/* Selector de División estilo "pill" rápido */}
-            <div className="flex items-center gap-2 min-w-0">
-              <span className="text-xs font-bold text-zinc-400 flex items-center gap-1 shrink-0">
-                <Users className="w-3.5 h-3.5" />
+            {/* Control manual interactivo de cantidad de jugadores */}
+            <div className="flex items-center gap-2 shrink-0">
+              <span className="text-xs font-bold text-zinc-300 flex items-center gap-1.5 shrink-0">
+                <Users className="w-3.5 h-3.5 text-zinc-400" />
                 <span className="hidden sm:inline">Dividir en:</span>
+                <span className="sm:hidden">Jugadores:</span>
               </span>
-              <div className="flex bg-zinc-800 p-1 rounded-xl border border-zinc-700 flex-1 sm:flex-none">
-                {[1, 2, 4, 6].map((num) => (
-                  <button
-                    key={num}
-                    type="button"
-                    onClick={() => setDivision(num)}
-                    className={`flex-1 sm:flex-none px-3 py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer ${
-                      division === num
-                        ? 'bg-punto-brand text-white shadow-sm'
-                        : 'text-zinc-400 hover:text-white'
-                    }`}
-                  >
-                    {num === 1 ? '1 Solo' : `[ ${num} ]`}
-                  </button>
-                ))}
+
+              <div className="flex items-center bg-zinc-800 border border-zinc-700 rounded-xl p-1 shadow-inner shrink-0">
+                {/* Botón Decrementar (-) */}
+                <button
+                  type="button"
+                  onClick={() => setDivision((prev) => Math.max(1, (parseInt(prev, 10) || 1) - 1))}
+                  disabled={cantDivision <= 1}
+                  aria-label="Disminuir jugadores"
+                  title="Disminuir jugadores"
+                  className="w-8 h-8 rounded-lg bg-zinc-700 hover:bg-zinc-600 disabled:opacity-30 disabled:hover:bg-zinc-700 text-white flex items-center justify-center transition-all active:scale-95 cursor-pointer disabled:cursor-not-allowed shrink-0"
+                >
+                  <Minus className="w-3.5 h-3.5" />
+                </button>
+
+                {/* Input Numérico Directo */}
+                <div className="flex items-center justify-center px-1">
+                  <input
+                    type="number"
+                    min="1"
+                    value={division}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      if (val === '') {
+                        setDivision('');
+                      } else {
+                        const n = parseInt(val, 10);
+                        if (!isNaN(n)) setDivision(Math.max(1, n));
+                      }
+                    }}
+                    onBlur={() => {
+                      if (!division || parseInt(division, 10) < 1) {
+                        setDivision(1);
+                      }
+                    }}
+                    className="w-11 sm:w-12 text-center bg-transparent text-white font-black text-sm sm:text-base focus:outline-none tabular-nums appearance-none [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none [-moz-appearance:_textfield]"
+                    title="Ingresar cantidad de jugadores para dividir"
+                  />
+                </div>
+
+                {/* Botón Incrementar (+) */}
+                <button
+                  type="button"
+                  onClick={() => setDivision((prev) => Math.max(1, (parseInt(prev, 10) || 1) + 1))}
+                  aria-label="Aumentar jugadores"
+                  title="Aumentar jugadores"
+                  className="w-8 h-8 rounded-lg bg-zinc-700 hover:bg-zinc-600 text-white flex items-center justify-center transition-all active:scale-95 cursor-pointer shrink-0"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                </button>
               </div>
+
+              <span className="text-xs font-semibold text-zinc-400 hidden sm:inline">
+                {cantDivision === 1 ? 'jugador' : 'jugadores'}
+              </span>
             </div>
           </div>
         </div>
@@ -695,7 +805,15 @@ export default function ModalCobro({ isOpen, onClose, turno, onConfirmarCobro })
 
         {/* ─── TARJETAS DE JUGADORES (Scrollable) ─── */}
         <div className="p-3 sm:p-6 overflow-y-auto overscroll-contain-smooth flex-1 min-h-0 bg-slate-50/60">
-          <div className={`grid gap-3 sm:gap-4 ${division === 1 ? 'grid-cols-1' : division === 2 ? 'grid-cols-1 sm:grid-cols-2' : 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-4'}`}>
+          <div className={`grid gap-3 sm:gap-4 ${
+            cantDivision === 1
+              ? 'grid-cols-1 max-w-md mx-auto'
+              : cantDivision === 2
+              ? 'grid-cols-1 sm:grid-cols-2'
+              : cantDivision === 3
+              ? 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3'
+              : 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-4'
+          }`}>
             {jugadores.map((jugador) => {
               const subtotalKiosco = jugador.itemsKiosco.reduce(
                 (sum, it) => sum + it.precio * (it.cantidad || 1),
@@ -714,17 +832,47 @@ export default function ModalCobro({ isOpen, onClose, turno, onConfirmarCobro })
                 >
                   {/* Encabezado de la Tarjeta */}
                   <div className="p-4 border-b border-zinc-100 flex items-center justify-between">
-                    <div className="flex items-center gap-2 min-w-0">
+                    <div className="flex items-center gap-2 min-w-0 flex-1 mr-2">
                       <div className={`w-7 h-7 rounded-lg flex items-center justify-center text-xs font-black shrink-0 ${jugador.pagado ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-700'}`}>
                         {jugador.id}
                       </div>
-                      <span className="font-bold text-slate-900 text-sm truncate">
-                        {jugador.nombre}
-                      </span>
+
+                      {editandoNombreId === jugador.id ? (
+                        <div className="flex items-center gap-1 flex-1 min-w-0">
+                          <input
+                            type="text"
+                            autoFocus
+                            value={nombreEnEdicion}
+                            onChange={(e) => setNombreEnEdicion(e.target.value)}
+                            onBlur={() => guardarNombreJugador(jugador.id)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') guardarNombreJugador(jugador.id);
+                              if (e.key === 'Escape') {
+                                setEditandoNombreId(null);
+                                setNombreEnEdicion('');
+                              }
+                            }}
+                            className="w-full text-xs font-bold text-slate-900 bg-slate-100 border border-slate-300 rounded px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-punto-brand focus:bg-white"
+                          />
+                        </div>
+                      ) : (
+                        <div
+                          onClick={() => iniciarEdicionNombre(jugador)}
+                          title={jugador.pagado ? jugador.nombre : 'Hacé clic para editar el nombre'}
+                          className={`group/name flex items-center gap-1.5 min-w-0 ${!jugador.pagado ? 'cursor-pointer' : ''}`}
+                        >
+                          <span className="font-bold text-slate-900 text-sm truncate group-hover/name:text-blue-600 transition-colors">
+                            {jugador.nombre}
+                          </span>
+                          {!jugador.pagado && (
+                            <Pencil className="w-3 h-3 text-slate-300 group-hover/name:text-blue-500 opacity-0 group-hover/name:opacity-100 transition-opacity shrink-0" />
+                          )}
+                        </div>
+                      )}
                     </div>
 
                     {jugador.pagado && (
-                      <span className="inline-flex items-center gap-1 text-[10px] font-black uppercase tracking-wider text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full">
+                      <span className="inline-flex items-center gap-1 text-[10px] font-black uppercase tracking-wider text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full shrink-0">
                         <CheckCircle2 className="w-3 h-3" />
                         Pagado
                       </span>
@@ -739,7 +887,7 @@ export default function ModalCobro({ isOpen, onClose, turno, onConfirmarCobro })
                         <div className="flex justify-between items-center text-xs text-slate-500">
                           <span>Cancha base:</span>
                           <span className="font-semibold text-slate-700">
-                            {formatearPrecio(Math.round((Number(totalBaseCancha) || 0) / division))}
+                            {formatearPrecio(Math.round((Number(totalBaseCancha) || 0) / cantDivision))}
                           </span>
                         </div>
                         <div className="flex justify-between items-center text-xs text-amber-700 font-medium">
@@ -748,7 +896,7 @@ export default function ModalCobro({ isOpen, onClose, turno, onConfirmarCobro })
                             Gastos comp. ({gastosCompartidos.length}):
                           </span>
                           <span className="font-bold text-amber-800">
-                            +{formatearPrecio(Math.round(totalGastosExtra / division))}
+                            +{formatearPrecio(Math.round(totalGastosExtra / cantDivision))}
                           </span>
                         </div>
                         <div className="flex justify-between items-center text-xs font-bold text-slate-900 pt-0.5">
@@ -1055,7 +1203,7 @@ export default function ModalCobro({ isOpen, onClose, turno, onConfirmarCobro })
                       Agregar Gasto Compartido
                     </h3>
                     <p className="text-[11px] text-slate-500 font-medium truncate">
-                      Tocá un artículo para dividirlo entre los {division} jugadores
+                      Tocá un artículo para dividirlo entre {cantDivision === 1 ? '1 solo jugador' : `los ${cantDivision} jugadores`}
                     </p>
                   </div>
                 </div>
@@ -1142,7 +1290,7 @@ export default function ModalCobro({ isOpen, onClose, turno, onConfirmarCobro })
               <div className="mt-3 pt-2.5 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-500 shrink-0">
                 <span>División Split Payment:</span>
                 <span className="font-bold text-slate-800">
-                  {division === 1 ? '1 solo jugador' : `Dividido entre ${division} jugadores`}
+                  {cantDivision === 1 ? '1 solo jugador' : `Dividido entre ${cantDivision} jugadores`}
                 </span>
               </div>
             </div>
@@ -1207,8 +1355,8 @@ export default function ModalCobro({ isOpen, onClose, turno, onConfirmarCobro })
                     </span>
                     {(subtotalKiosco > 0 || totalGastosExtra > 0) && (
                       <p className="text-[11px] text-slate-500 font-medium mt-1">
-                        Cancha {formatearPrecio(Math.round((Number(totalBaseCancha) || 0) / division))}
-                        {totalGastosExtra > 0 && ` + Gastos comp. ${formatearPrecio(Math.round(totalGastosExtra / division))}`}
+                        Cancha {formatearPrecio(Math.round((Number(totalBaseCancha) || 0) / cantDivision))}
+                        {totalGastosExtra > 0 && ` + Gastos comp. ${formatearPrecio(Math.round(totalGastosExtra / cantDivision))}`}
                         {subtotalKiosco > 0 && ` + Extras ${formatearPrecio(subtotalKiosco)}`}
                       </p>
                     )}
