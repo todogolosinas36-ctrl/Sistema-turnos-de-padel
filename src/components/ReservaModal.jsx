@@ -23,6 +23,19 @@ export default function ReservaModal({ isOpen, onClose, datosReserva, onSuccess 
     }
   }, [isOpen]);
 
+  // Bloqueo de scroll de fondo cuando el modal está abierto
+  useEffect(() => {
+    if (isOpen) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = 'unset';
+    }
+
+    return () => {
+      document.body.style.overflow = 'unset';
+    };
+  }, [isOpen]);
+
   if (!isOpen || !datosReserva) return null;
 
   const { cancha, fecha, horaInicio, duracion } = datosReserva;
@@ -78,63 +91,64 @@ export default function ReservaModal({ isOpen, onClose, datosReserva, onSuccess 
   const urlWhatsApp = `https://wa.me/${numeroWhatsApp.replace(/\D/g, '')}?text=${encodeURIComponent(mensajeWhatsApp)}`;
 
   const inputClass =
-    'w-full bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-3.5 text-zinc-900 font-medium placeholder-zinc-400 focus:outline-none focus:ring-2 focus:ring-zinc-900 focus:bg-white transition-all text-sm';
+    'w-full bg-zinc-50 border border-zinc-200 rounded-xl px-3.5 py-2.5 text-zinc-900 font-medium placeholder-zinc-400 focus:outline-none focus:ring-2 focus:ring-zinc-900 focus:bg-white transition-all text-sm';
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      {/* Backdrop */}
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm h-[100dvh] w-screen"
+      onClick={onClose}
+    >
+      {/* Tarjeta Interior */}
       <div
-        className="absolute inset-0 bg-zinc-900/50 backdrop-blur-xs transition-opacity"
-        onClick={onClose}
-      />
-
-      {/* Modal Card Centrada */}
-      <div className="relative w-full max-w-md bg-white rounded-3xl shadow-2xl my-auto max-h-[90vh] overflow-y-auto overscroll-contain-smooth animate-in fade-in zoom-in-95 duration-150">
+        className="relative my-auto max-h-[85dvh] overflow-y-auto w-full max-w-sm rounded-2xl p-5 shadow-2xl bg-white animate-in fade-in zoom-in-95 duration-150"
+        onClick={(e) => e.stopPropagation()}
+      >
         {paso === 1 ? (
-          <div className="p-6 sm:p-8">
+          <div>
             {/* Encabezado */}
-            <div className="flex items-center justify-between mb-6">
+            <div className="flex items-center justify-between mb-4">
               <div>
-                <h2 className="text-2xl font-black text-zinc-900 tracking-tight">Reservar</h2>
-                <p className="text-sm text-zinc-400 font-medium mt-0.5">Completá tus datos</p>
+                <h2 className="text-xl font-black text-zinc-900 tracking-tight">Reservar</h2>
+                <p className="text-xs text-zinc-400 font-medium mt-0.5">Completá tus datos</p>
               </div>
               <button
                 type="button"
                 onClick={onClose}
-                className="w-9 h-9 flex items-center justify-center bg-zinc-100 hover:bg-zinc-200 rounded-xl transition-colors"
+                className="w-8 h-8 flex items-center justify-center bg-zinc-100 hover:bg-zinc-200 rounded-xl transition-colors cursor-pointer"
+                aria-label="Cerrar modal"
               >
                 <X className="w-4 h-4 text-zinc-500" />
               </button>
             </div>
 
             {/* Resumen del turno */}
-            <div className="bg-zinc-50 p-5 rounded-2xl border border-zinc-100 mb-6 flex items-center gap-4">
+            <div className="bg-zinc-50 p-3.5 rounded-xl border border-zinc-100 mb-4 flex items-center gap-3">
               <div
-                className="w-12 h-12 rounded-xl flex items-center justify-center shrink-0"
+                className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
                 style={{ backgroundColor: `${cancha?.color_identificador || '#3f3f46'}22` }}
               >
                 <span
-                  className="w-4 h-4 rounded-full"
+                  className="w-3.5 h-3.5 rounded-full"
                   style={{ backgroundColor: cancha?.color_identificador || '#3f3f46' }}
                 />
               </div>
               <div className="flex-1 min-w-0">
-                <p className="font-black text-zinc-900 text-base leading-tight truncate">{cancha?.nombre}</p>
-                <div className="flex items-center gap-3 mt-1 flex-wrap">
+                <p className="font-black text-zinc-900 text-sm leading-tight truncate">{cancha?.nombre}</p>
+                <div className="flex items-center gap-2 mt-1 flex-wrap">
                   <span className="flex items-center gap-1 text-xs font-semibold text-zinc-500">
-                    <CalendarDays className="w-3 h-3" /> {fecha}
+                    <CalendarDays className="w-3 h-3 text-zinc-400" /> {fecha}
                   </span>
                   <span className="flex items-center gap-1 text-xs font-semibold text-zinc-500">
-                    <Clock className="w-3 h-3" /> {horaInicio} hs · {duracion} min
+                    <Clock className="w-3 h-3 text-zinc-400" /> {horaInicio} hs · {duracion} min
                   </span>
                 </div>
               </div>
             </div>
 
             {/* Formulario */}
-            <form onSubmit={handleSubmit} className="space-y-4">
+            <form onSubmit={handleSubmit} className="space-y-3.5">
               <div>
-                <label className="block text-xs font-bold text-zinc-500 uppercase tracking-wider mb-1.5">
+                <label className="block text-xs font-bold text-zinc-500 uppercase tracking-wider mb-1">
                   Nombre y Apellido
                 </label>
                 <input
@@ -147,7 +161,7 @@ export default function ReservaModal({ isOpen, onClose, datosReserva, onSuccess 
                 />
               </div>
               <div>
-                <label className="block text-xs font-bold text-zinc-500 uppercase tracking-wider mb-1.5">
+                <label className="block text-xs font-bold text-zinc-500 uppercase tracking-wider mb-1">
                   Teléfono
                 </label>
                 <input
@@ -161,25 +175,25 @@ export default function ReservaModal({ isOpen, onClose, datosReserva, onSuccess 
               </div>
 
               {error && (
-              <div className="flex items-start gap-2.5 p-3.5 bg-red-50 border border-red-200 rounded-xl">
-                <AlertTriangle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
-                <p className="text-xs font-semibold text-red-700 leading-relaxed">{error}</p>
-              </div>
-            )}
+                <div className="flex items-start gap-2 p-3 bg-red-50 border border-red-200 rounded-xl">
+                  <AlertTriangle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+                  <p className="text-xs font-semibold text-red-700 leading-relaxed">{error}</p>
+                </div>
+              )}
 
-            <div className="flex gap-3 pt-3">
+              <div className="flex gap-2.5 pt-2">
                 <button
                   type="button"
                   onClick={onClose}
                   disabled={loading}
-                  className="flex-1 py-4 px-4 border border-zinc-200 text-zinc-600 font-bold rounded-xl hover:bg-zinc-50 transition-all text-sm"
+                  className="flex-1 py-3 px-3 border border-zinc-200 text-zinc-600 font-bold rounded-xl hover:bg-zinc-50 active:scale-[0.98] transition-all text-sm cursor-pointer"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
                   disabled={loading}
-                  className="flex-[2] bg-zinc-900 text-white font-bold text-base py-4 rounded-xl shadow-md hover:bg-zinc-800 active:scale-[0.98] transition-all flex justify-center items-center gap-2 disabled:opacity-50"
+                  className="flex-[2] bg-zinc-900 text-white font-bold text-sm py-3 px-4 rounded-xl shadow-md hover:bg-zinc-800 active:scale-[0.98] transition-all flex justify-center items-center gap-2 disabled:opacity-50 cursor-pointer"
                 >
                   {loading ? (
                     <>
@@ -195,13 +209,13 @@ export default function ReservaModal({ isOpen, onClose, datosReserva, onSuccess 
           </div>
         ) : (
           /* Paso 2: Confirmación */
-          <div className="p-6 sm:p-8 text-center space-y-5">
-            <div className="w-16 h-16 bg-emerald-50 rounded-2xl flex items-center justify-center mx-auto">
-              <CheckCircle className="w-9 h-9 text-emerald-500" />
+          <div className="text-center space-y-4 py-2">
+            <div className="w-14 h-14 bg-emerald-50 rounded-2xl flex items-center justify-center mx-auto">
+              <CheckCircle className="w-8 h-8 text-emerald-500" />
             </div>
             <div>
-              <h2 className="text-2xl font-black text-zinc-900 tracking-tight">¡Turno confirmado!</h2>
-              <p className="text-sm text-zinc-500 font-medium mt-2 leading-relaxed">
+              <h2 className="text-xl font-black text-zinc-900 tracking-tight">¡Turno confirmado!</h2>
+              <p className="text-xs text-zinc-500 font-medium mt-1.5 leading-relaxed">
                 <span className="font-bold text-zinc-700">{cancha?.nombre}</span> — {fecha} a las{' '}
                 <span className="font-bold text-zinc-700">{horaInicio} hs</span>
               </p>
@@ -211,16 +225,16 @@ export default function ReservaModal({ isOpen, onClose, datosReserva, onSuccess 
               href={urlWhatsApp}
               target="_blank"
               rel="noopener noreferrer"
-              className="w-full flex items-center justify-center gap-2.5 py-4 px-4 bg-emerald-500 hover:bg-emerald-600 active:scale-[0.98] text-white font-bold rounded-xl shadow-lg transition-all text-base"
+              className="w-full flex items-center justify-center gap-2 py-3.5 px-4 bg-emerald-500 hover:bg-emerald-600 active:scale-[0.98] text-white font-bold rounded-xl shadow-md transition-all text-sm cursor-pointer"
             >
-              <MessageCircle className="w-5 h-5" />
+              <MessageCircle className="w-4 h-4" />
               Notificar por WhatsApp
             </a>
 
             <button
               type="button"
               onClick={() => { onSuccess?.(); onClose?.(); }}
-              className="w-full bg-zinc-900 text-white font-bold text-base py-4 rounded-xl shadow-md hover:bg-zinc-800 active:scale-[0.98] transition-all"
+              className="w-full bg-zinc-900 text-white font-bold text-sm py-3.5 rounded-xl shadow-md hover:bg-zinc-800 active:scale-[0.98] transition-all cursor-pointer"
             >
               Cerrar
             </button>
