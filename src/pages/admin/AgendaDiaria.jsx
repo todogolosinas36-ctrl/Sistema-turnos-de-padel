@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { generarBloquesHorarios, hoyISO, sumarDias } from '../../utils/dateHelpers';
 import { calcularHoraFin } from '../../utils/timeCalculations';
 import { useTurnos } from '../../context/TurnosContext';
+import { supabase } from '../../lib/supabaseClient';
 import ModalCobro from '../../components/ModalCobro';
 import {
   Plus, DollarSign, MoreVertical,
@@ -630,6 +631,28 @@ export default function AgendaDiaria({ fecha: fechaProp }) {
 
   // Navegación de fecha
   const cambiarDia = (delta) => setFecha((f) => sumarDias(f, delta));
+
+  useEffect(() => {
+    // Si la fecha seleccionada es hoy o cualquier otra, recargamos la info con recargar() de ser necesario
+    // pero con recargar() se hace un fetch genérico.
+    const canalGrilla = supabase
+      .channel(`grilla-admin-live-${Date.now()}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'turnos' },
+        (payload) => {
+          console.log('⚡ [GRILLA LIVE] Cambio recibido:', payload.eventType, payload);
+          if (recargar) recargar(true);
+        }
+      )
+      .subscribe((status) => {
+        console.log('📡 [GRILLA LIVE] Estado:', status);
+      });
+
+    return () => {
+      supabase.removeChannel(canalGrilla);
+    };
+  }, [fecha, recargar]);
 
   const fechaFormateada = new Date(`${fecha}T12:00:00`).toLocaleDateString('es-AR', {
     weekday: 'long',

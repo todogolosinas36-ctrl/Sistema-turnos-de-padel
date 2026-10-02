@@ -208,8 +208,8 @@ export function TurnosProvider({ children }) {
   }, []);
 
   /* ─── Carga inicial ─── */
-  const cargarDatos = useCallback(async () => {
-    setLoading(true);
+  const cargarDatos = useCallback(async (silencioso = false) => {
+    if (!silencioso) setLoading(true);
 
     const [resCanchas, resTurnos, resFijos, resConfig] = await Promise.all([
       supabase.from('canchas').select('*').order('orden'),
