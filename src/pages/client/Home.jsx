@@ -122,6 +122,24 @@ export default function Home() {
     }
   }, [reservaActiva, miIdTemporal]);
 
+  // Escuchar cancelaciones para mostrar el Toast persistente
+  useEffect(() => {
+    const channelName = `cliente-cancelaciones-${Math.random().toString(36).substring(2, 9)}`;
+    const canal = supabase
+      .channel(channelName)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'turnos' },
+        (payload) => {
+          if (payload.eventType === 'DELETE' || (payload.eventType === 'UPDATE' && payload.new?.estado?.toLowerCase() === 'cancelado')) {
+            setAvisoLiberado(true);
+          }
+        }
+      )
+      .subscribe();
+    return () => supabase.removeChannel(canal);
+  }, []);
+
   const guardarListaEspera = async (e) => {
     e.preventDefault();
     if (!datosEspera.nombre || !datosEspera.telefono) return;
@@ -196,9 +214,9 @@ export default function Home() {
       
       {/* Toast de Oportunidad (Realtime) */}
       {avisoLiberado && (
-        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[99999] animate-in slide-in-from-top fade-in duration-300 w-[95vw] max-w-md">
-          <div className="bg-slate-900/90 backdrop-blur-md border border-emerald-500/30 text-white px-5 py-4 rounded-2xl shadow-2xl shadow-emerald-500/10 flex flex-col sm:flex-row items-center gap-4">
-            <div className="flex items-center gap-3 w-full sm:w-auto">
+        <div className="fixed top-4 right-4 z-[99999] max-w-sm w-full p-4 animate-in slide-in-from-right fade-in duration-300">
+          <div className="bg-slate-900/95 backdrop-blur-md border border-emerald-500/30 text-white px-5 py-4 rounded-2xl shadow-2xl shadow-emerald-500/10 flex flex-col gap-3">
+            <div className="flex items-center gap-3">
               <div className="bg-emerald-500/10 p-2 rounded-xl shrink-0">
                 <BellRing className="w-5 h-5 text-emerald-400" />
               </div>
@@ -209,13 +227,13 @@ export default function Home() {
                 </p>
               </div>
             </div>
-            <div className="flex items-center gap-2 mt-2 sm:mt-0 w-full sm:w-auto">
+            <div className="flex items-center gap-2">
               <button 
                 onClick={() => {
                   if (recargar) recargar();
                   setAvisoLiberado(false);
                 }} 
-                className="flex-1 sm:flex-none bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold px-4 py-2.5 rounded-xl text-xs transition-colors shadow-lg shadow-emerald-500/20 active:scale-95 whitespace-nowrap"
+                className="flex-1 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold px-4 py-2.5 rounded-xl text-xs transition-colors shadow-lg shadow-emerald-500/20 active:scale-95 whitespace-nowrap"
               >
                 Actualizar disponibilidad
               </button>
@@ -409,7 +427,10 @@ export default function Home() {
                             onClick={
                               vencido || estaEnProceso
                                 ? undefined
-                                : () => setReservaActiva({ cancha, fecha, horaInicio: bloque, duracion })
+                                : () => {
+                                    setReservaActiva({ cancha, fecha, horaInicio: bloque, duracion });
+                                    setAvisoLiberado(false);
+                                  }
                             }
                             className={
                               vencido

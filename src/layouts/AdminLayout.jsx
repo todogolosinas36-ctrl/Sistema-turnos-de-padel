@@ -24,34 +24,56 @@ import { useNotifications } from '../context/NotificationContext';
 import { themes } from '../utils/themeConfig';
 import { supabase } from '../lib/supabaseClient';
 
-const playCancelSound = () => {
-  try {
+let audioCtx = null;
+
+const getAudioCtx = () => {
+  if (typeof window !== 'undefined' && !audioCtx) {
     const AudioContext = window.AudioContext || window.webkitAudioContext;
-    if (!AudioContext) return;
-    const ctx = new AudioContext();
-    
-    const playOsc = (freq, startTime, duration) => {
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      
-      osc.type = 'triangle';
-      osc.frequency.setValueAtTime(freq, startTime);
-      
-      gain.gain.setValueAtTime(0.1, startTime);
-      gain.gain.exponentialRampToValueAtTime(0.01, startTime + duration);
-      
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      
-      osc.start(startTime);
-      osc.stop(startTime + duration);
-    };
+    if (AudioContext) {
+      audioCtx = new AudioContext();
+    }
+  }
+  return audioCtx;
+};
+
+const reproducirAlertaCancelacion = async () => {
+  try {
+    const ctx = getAudioCtx();
+    if (!ctx) return;
+
+    if (ctx.state === 'suspended') {
+      await ctx.resume();
+    }
 
     const now = ctx.currentTime;
-    playOsc(400, now, 0.15); // beep
-    playOsc(300, now + 0.2, 0.25); // boop (descendente)
-  } catch (err) {
-    console.error("Audio error", err);
+
+    // Tono 1 (Agudo)
+    const osc1 = ctx.createOscillator();
+    const gain1 = ctx.createGain();
+    osc1.type = 'sine';
+    osc1.frequency.setValueAtTime(880, now); // Nota La5
+    gain1.gain.setValueAtTime(0.3, now);
+    gain1.gain.exponentialRampToValueAtTime(0.01, now + 0.15);
+    osc1.connect(gain1);
+    gain1.connect(ctx.destination);
+    osc1.start(now);
+    osc1.stop(now + 0.15);
+
+    // Tono 2 descendente de alerta
+    const osc2 = ctx.createOscillator();
+    const gain2 = ctx.createGain();
+    osc2.type = 'sine';
+    osc2.frequency.setValueAtTime(587.33, now + 0.18); // Nota Re5
+    gain2.gain.setValueAtTime(0.3, now + 0.18);
+    gain2.gain.exponentialRampToValueAtTime(0.01, now + 0.35);
+    osc2.connect(gain2);
+    gain2.connect(ctx.destination);
+    osc2.start(now + 0.18);
+    osc2.stop(now + 0.35);
+
+    console.log('🔔 Alerta sonora reproducida');
+  } catch (error) {
+    console.error('Error al reproducir audio:', error);
   }
 };
 
@@ -196,6 +218,28 @@ export default function AdminLayout() {
   const emailAdmin = user?.email || 'admin@club.com';
   const iniciales = emailAdmin.slice(0, 2).toUpperCase();
 
+  // Autoplay Unlocker para la alerta sonora
+  useEffect(() => {
+    const desbloquearAudio = () => {
+      const ctx = getAudioCtx();
+      if (ctx && ctx.state === 'suspended') {
+        ctx.resume().then(() => {
+          console.log('🔊 AudioContext desbloqueado con éxito');
+        });
+      }
+    };
+
+    window.addEventListener('click', desbloquearAudio, { once: true });
+    window.addEventListener('keydown', desbloquearAudio, { once: true });
+    window.addEventListener('touchstart', desbloquearAudio, { once: true });
+
+    return () => {
+      window.removeEventListener('click', desbloquearAudio);
+      window.removeEventListener('keydown', desbloquearAudio);
+      window.removeEventListener('touchstart', desbloquearAudio);
+    };
+  }, []);
+
   // Cerrar el drawer al navegar (comportamiento esperado en mobile)
   useEffect(() => {
     setDrawerOpen(false);
@@ -245,7 +289,7 @@ export default function AdminLayout() {
           }
 
           if (cancelledTurno) {
-            playCancelSound();
+            reproducirAlertaCancelacion();
             
             const nombreCancha = canchasRef.current.find(c => c.id === cancelledTurno.cancha_id)?.nombre 
                                 || cancelledTurno.cancha_nombre 

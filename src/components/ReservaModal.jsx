@@ -54,6 +54,13 @@ export default function ReservaModal({ isOpen, onClose, datosReserva, onSuccess 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError(null);
+
+    const soloNumeros = telefono.replace(/\D/g, '');
+    if (soloNumeros.length < 8) {
+      setError('Por favor, ingresá un número de teléfono válido (mínimo 8 dígitos).');
+      return;
+    }
+
     setLoading(true);
 
     try {
@@ -80,6 +87,28 @@ export default function ReservaModal({ isOpen, onClose, datosReserva, onSuccess 
 
       setTurnoInsertado(data);
       setPaso(2);
+
+      // Generar URL de WhatsApp y redireccionar automáticamente
+      const numeroWhatsApp = import.meta.env.VITE_WHATSAPP_COMPLEJO || '';
+      const nombreComplejo = import.meta.env.VITE_NOMBRE_COMPLEJO || '20/10 PÁDEL';
+      
+      let fechaFormateada = fecha;
+      if (fecha && fecha.includes('-')) {
+        const [y, m, d] = fecha.split('-');
+        fechaFormateada = `${d}/${m}/${y}`;
+      }
+
+      const mensajeWhatsApp = `Hola! Quiero confirmar mi reserva en ${nombreComplejo}:
+- Nombre: ${capitalizarPalabras(nombre)}
+- Cancha: ${cancha?.nombre}
+- Fecha: ${fechaFormateada}
+- Horario: ${horaInicio} a ${horaFin}
+Muchas gracias!`;
+
+      const urlWhatsApp = `https://wa.me/${numeroWhatsApp.replace(/\D/g, '')}?text=${encodeURIComponent(mensajeWhatsApp)}`;
+      
+      window.open(urlWhatsApp, '_blank');
+      
     } catch (err) {
       console.error('Error al crear la reserva:', err);
       setError(
@@ -95,31 +124,18 @@ export default function ReservaModal({ isOpen, onClose, datosReserva, onSuccess 
   const numeroWhatsApp = import.meta.env.VITE_WHATSAPP_COMPLEJO || '';
   const nombreComplejo = import.meta.env.VITE_NOMBRE_COMPLEJO || '20/10 PÁDEL';
 
-  const precioFormateado = precioBaseCancha
-    ? new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 0 }).format(precioBaseCancha)
-    : 'A confirmar';
-
   let fechaFormateada = fecha;
   if (fecha && fecha.includes('-')) {
     const [y, m, d] = fecha.split('-');
     fechaFormateada = `${d}/${m}/${y}`;
   }
 
-  const codigo = turnoInsertado?.codigo_cancelacion || turnoInsertado?.token_cancelacion || '';
-  const linkGestion = `${window.location.origin}/c/${codigo}`;
-
-  const mensajeWhatsApp = `🎾 *NUEVA RESERVA - ${nombreComplejo.toUpperCase()}* 🎾
-
-👤 *Cliente:* ${capitalizarPalabras(nombre)}
-📱 *Teléfono:* ${telefono}
-🏟 *Cancha:* ${cancha?.nombre}
-🗓 *Fecha:* ${fechaFormateada}
-⏰ *Horario:* ${horaInicio} hs
-💵 *Valor:* ${precioFormateado}
-
-🔗 *Gestionar o Cancelar mi Turno:*
-${linkGestion}
-*(Las cancelaciones solo se permiten con al menos 2 horas de anticipación)*`;
+  const mensajeWhatsApp = `Hola! Quiero confirmar mi reserva en ${nombreComplejo}:
+- Nombre: ${capitalizarPalabras(nombre)}
+- Cancha: ${cancha?.nombre}
+- Fecha: ${fechaFormateada}
+- Horario: ${horaInicio} a ${calcularHoraFin(horaInicio, duracion)}
+Muchas gracias!`;
 
   const urlWhatsApp = `https://wa.me/${numeroWhatsApp.replace(/\D/g, '')}?text=${encodeURIComponent(mensajeWhatsApp)}`;
 
