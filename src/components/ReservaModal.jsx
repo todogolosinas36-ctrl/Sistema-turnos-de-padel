@@ -98,12 +98,23 @@ export default function ReservaModal({ isOpen, onClose, datosReserva, onSuccess 
         fechaFormateada = `${d}/${m}/${y}`;
       }
 
-      const mensajeWhatsApp = `Hola! Quiero confirmar mi reserva en ${nombreComplejo}:
-- Nombre: ${capitalizarPalabras(nombre)}
-- Cancha: ${cancha?.nombre}
-- Fecha: ${fechaFormateada}
-- Horario: ${horaInicio} a ${horaFin}
-Muchas gracias!`;
+      const codigo = data?.codigo_cancelacion || data?.token_cancelacion || data?.id || '';
+      const baseUrl = window.location.origin;
+      const linkCancelacion = `${baseUrl}/c/${codigo}`;
+
+      const mensajeWhatsApp = `¡Hola! Confirmo mi reserva en *${nombreComplejo.toUpperCase()}* 🎾
+
+📅 *Fecha:* ${fechaFormateada}
+⏰ *Horario:* ${horaInicio} a ${horaFin}
+📍 *Cancha:* ${cancha?.nombre}
+👤 *Titular:* ${capitalizarPalabras(nombre)}
+
+-----------------------------------
+🔗 *¿Necesitas cancelar o reprogramar?*
+Puedes gestionar o cancelar tu turno ingresando al siguiente enlace:
+${linkCancelacion}
+-----------------------------------
+¡Muchas gracias!`;
 
       const urlWhatsApp = `https://wa.me/${numeroWhatsApp.replace(/\D/g, '')}?text=${encodeURIComponent(mensajeWhatsApp)}`;
       
@@ -130,12 +141,22 @@ Muchas gracias!`;
     fechaFormateada = `${d}/${m}/${y}`;
   }
 
-  const mensajeWhatsApp = `Hola! Quiero confirmar mi reserva en ${nombreComplejo}:
-- Nombre: ${capitalizarPalabras(nombre)}
-- Cancha: ${cancha?.nombre}
-- Fecha: ${fechaFormateada}
-- Horario: ${horaInicio} a ${calcularHoraFin(horaInicio, duracion)}
-Muchas gracias!`;
+  const codigo = turnoInsertado?.codigo_cancelacion || turnoInsertado?.token_cancelacion || turnoInsertado?.id || '';
+  const linkCancelacion = `${window.location.origin}/c/${codigo}`;
+
+  const mensajeWhatsApp = `¡Hola! Confirmo mi reserva en *${nombreComplejo.toUpperCase()}* 🎾
+
+📅 *Fecha:* ${fechaFormateada}
+⏰ *Horario:* ${horaInicio} a ${calcularHoraFin(horaInicio, duracion)}
+📍 *Cancha:* ${cancha?.nombre}
+👤 *Titular:* ${capitalizarPalabras(nombre)}
+
+-----------------------------------
+🔗 *¿Necesitas cancelar o reprogramar?*
+Puedes gestionar o cancelar tu turno ingresando al siguiente enlace:
+${linkCancelacion}
+-----------------------------------
+¡Muchas gracias!`;
 
   const urlWhatsApp = `https://wa.me/${numeroWhatsApp.replace(/\D/g, '')}?text=${encodeURIComponent(mensajeWhatsApp)}`;
 
