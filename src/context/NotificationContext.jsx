@@ -136,26 +136,13 @@ export function NotificationProvider({ children }) {
 
   const playBeep = useCallback((tipo) => {
     try {
-      const ctx = new (window.AudioContext || window.webkitAudioContext)();
-      const osc = ctx.createOscillator();
-      const gainNode = ctx.createGain();
-      osc.connect(gainNode);
-      gainNode.connect(ctx.destination);
       if (tipo === 'insert') {
-        osc.type = 'sine';
-        osc.frequency.setValueAtTime(523.25, ctx.currentTime);
-        osc.frequency.exponentialRampToValueAtTime(1046.50, ctx.currentTime + 0.1);
-        gainNode.gain.setValueAtTime(0.5, ctx.currentTime);
-        gainNode.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.3);
+        const audio = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3');
+        audio.play().catch(() => {});
       } else {
-        osc.type = 'triangle';
-        osc.frequency.setValueAtTime(440, ctx.currentTime);
-        osc.frequency.exponentialRampToValueAtTime(220, ctx.currentTime + 0.2);
-        gainNode.gain.setValueAtTime(0.5, ctx.currentTime);
-        gainNode.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.3);
+        const audio = new Audio('https://assets.mixkit.co/active_storage/sfx/2874/2874-preview.mp3');
+        audio.play().catch(() => {});
       }
-      osc.start(ctx.currentTime);
-      osc.stop(ctx.currentTime + 0.3);
     } catch(e) {
       console.warn('Audio no soportado', e);
     }
@@ -203,34 +190,40 @@ export function NotificationProvider({ children }) {
 
   /* Suscripcion Supabase Realtime */
   useEffect(() => {
-    const channel = supabase
-      .channel('notif-turnos-eventos')
+    const canal = supabase
+      .channel('notificaciones-turnos-live')
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'turnos' },
         (payload) => {
+          console.log('⚡ EVENTO REALTIME RECIBIDO:', payload);
+
+          // 1. NUEVO TURNO
           if (payload.eventType === 'INSERT') {
             agregarNotificacion(payload.new, 'insert');
-          } else if (payload.eventType === 'UPDATE') {
-            if (payload.new.estado === 'cancelado' && payload.old.estado !== 'cancelado') {
+            // alert(`🎾 ¡Nuevo Turno Reservado!\nCliente: ${payload.new.cliente_nombre || payload.new.cliente_apellido || 'Nuevo'}\nHora: ${payload.new.hora_inicio || ''}`);
+          } 
+          // 2. TURNO CANCELADO
+          else if (payload.eventType === 'UPDATE' && payload.new.estado === 'cancelado') {
+            // solo notificar si antes no estaba cancelado
+            if (payload.old.estado !== 'cancelado') {
               agregarNotificacion(payload.new, 'cancel');
+              // alert(`❌ Turno Cancelado\nSe liberó la cancha a las ${payload.new.hora_inicio || ''} hs.`);
             }
-          } else if (payload.eventType === 'DELETE') {
+          } 
+          // 3. TURNO ELIMINADO
+          else if (payload.eventType === 'DELETE') {
             agregarNotificacion(payload.old, 'cancel');
           }
         }
       )
-      .subscribe((status) => {
-        if (status === 'SUBSCRIBED') {
-          console.info('[Notificaciones] Canal Realtime activo OK');
-        }
-        if (status === 'CHANNEL_ERROR') {
-          console.warn('[Notificaciones] No se pudo conectar al canal Realtime.');
-        }
+      .subscribe((status, err) => {
+        console.log('📡 ESTADO SUSCRIPCIÓN REALTIME:', status);
+        if (err) console.error('Error en Realtime:', err);
       });
 
     return () => {
-      supabase.removeChannel(channel);
+      supabase.removeChannel(canal);
     };
   }, [agregarNotificacion]);
 
