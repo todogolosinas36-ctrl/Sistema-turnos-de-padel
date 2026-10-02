@@ -206,7 +206,7 @@ export default function AdminLayout() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [cerrandoSesion, setCerrandoSesion] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
-  const [cancelToast, setCancelToast] = useState(null);
+  const [alertaCancelado, setAlertaCancelado] = useState(null);
 
   const canchasRef = useRef(canchas);
   useEffect(() => {
@@ -272,20 +272,23 @@ export default function AdminLayout() {
   useEffect(() => {
     if (modoLocal) return;
 
-    const adminChannel = supabase.channel('admin-cancellations')
+    const adminChannelName = `admin-alertas-${Date.now()}`;
+    const adminChannel = supabase.channel(adminChannelName)
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'turnos' },
         (payload) => {
+          console.log('🚨 [ADMIN REALTIME] Evento detectado:', payload.eventType, payload);
+
           let cancelledTurno = null;
           
           if (payload.eventType === 'DELETE') {
-            cancelledTurno = payload.old;
-          } else if (payload.eventType === 'UPDATE' && payload.new.estado?.toLowerCase() === 'cancelado') {
-            // Solo si cambió de estado a cancelado. Si ya estaba cancelado y se actualizó otra cosa, no hacer sonido.
-            // Para ser exactos, Supabase Postgres changes nos da payload.old si lo pedimos con REPLICA IDENTITY FULL, pero no siempre.
-            // Si llega un cancelado, mostramos alerta.
-            cancelledTurno = payload.new;
+            cancelledTurno = payload.old || {};
+          } else if (payload.eventType === 'UPDATE') {
+            const nuevoEstado = payload.new?.estado?.toLowerCase();
+            if (nuevoEstado === 'cancelado' || nuevoEstado === 'disponible' || !payload.new?.titular) {
+              cancelledTurno = payload.new || {};
+            }
           }
 
           if (cancelledTurno) {
@@ -293,32 +296,26 @@ export default function AdminLayout() {
             
             const nombreCancha = canchasRef.current.find(c => c.id === cancelledTurno.cancha_id)?.nombre 
                                 || cancelledTurno.cancha_nombre 
-                                || 'Cancha';
+                                || cancelledTurno.cancha_id;
             const horario = cancelledTurno.hora_inicio ? cancelledTurno.hora_inicio.substring(0, 5) : '';
-            const titular = `${cancelledTurno.cliente_nombre || ''} ${cancelledTurno.cliente_apellido || ''}`.trim() || 'Titular';
+            const titular = `${cancelledTurno.cliente_nombre || ''} ${cancelledTurno.cliente_apellido || ''}`.trim() || cancelledTurno.titular;
 
-            setCancelToast({
-              id: Date.now(),
-              cancha: nombreCancha,
-              horario,
-              titular
+            setAlertaCancelado({
+              cancha_id: nombreCancha,
+              hora_inicio: horario,
+              titular: titular
             });
           }
         }
       )
-      .subscribe();
+      .subscribe((status, err) => {
+        console.log(`🔌 [ADMIN REALTIME] Canal estado: ${status}`, err || '');
+      });
 
     return () => {
       supabase.removeChannel(adminChannel);
     };
   }, [modoLocal]);
-
-  useEffect(() => {
-    if (cancelToast) {
-      const timer = setTimeout(() => setCancelToast(null), 6000);
-      return () => clearTimeout(timer);
-    }
-  }, [cancelToast]);
 
   const handleLogout = async () => {
     setCerrandoSesion(true);
@@ -576,30 +573,26 @@ export default function AdminLayout() {
         </main>
 
         {/* Toast de Cancelación en vivo */}
-        {cancelToast && (
-          <div className="fixed bottom-4 sm:bottom-8 right-4 sm:right-8 z-[99999] animate-in slide-in-from-bottom-5 fade-in duration-300">
-            <div className="bg-gradient-to-r from-red-600 to-red-500 text-white px-5 py-4 rounded-xl shadow-2xl shadow-red-500/20 flex items-center gap-4 max-w-sm border border-red-400/50">
-              <div className="bg-red-950/30 p-2 rounded-lg shrink-0">
-                <AlertTriangle className="w-6 h-6 text-red-100" />
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="font-extrabold text-sm leading-tight text-white drop-shadow-sm uppercase tracking-wide">
-                  ⚠️ Turno Cancelado
-                </p>
-                <p className="text-sm font-semibold text-red-100 mt-1 truncate">
-                  {cancelToast.cancha} - {cancelToast.horario} hs
-                </p>
-                <p className="text-xs font-medium text-red-200 truncate mt-0.5">
-                  Titular: {cancelToast.titular}
-                </p>
-              </div>
-              <button 
-                onClick={() => setCancelToast(null)}
-                className="shrink-0 p-1.5 hover:bg-red-700/50 rounded-lg transition-colors text-red-200 hover:text-white"
-              >
-                <X className="w-5 h-5" />
-              </button>
+        {alertaCancelado && (
+          <div className="fixed top-5 right-5 z-[999999] flex items-start gap-3 w-80 sm:w-96 p-4 rounded-xl bg-slate-900 border-2 border-red-500/80 text-white shadow-2xl backdrop-blur-md animate-bounce-once">
+            <div className="p-2 rounded-lg bg-red-500/20 text-red-400">
+              ⚠️
             </div>
+            <div className="flex-1">
+              <h4 className="font-bold text-sm text-red-400 uppercase tracking-wider">¡Turno Cancelado!</h4>
+              <p className="text-xs text-slate-300 mt-1">
+                {alertaCancelado.cancha_id ? `Cancha: ${alertaCancelado.cancha_id}` : 'Cancha liberada'} • {alertaCancelado.hora_inicio || 'Horario liberado'}
+              </p>
+              {alertaCancelado.titular && (
+                <p className="text-[11px] text-slate-400 mt-0.5">Cliente: {alertaCancelado.titular}</p>
+              )}
+            </div>
+            <button 
+              onClick={() => setAlertaCancelado(null)} 
+              className="text-slate-400 hover:text-white p-1 rounded-md"
+            >
+              ✕
+            </button>
           </div>
         )}
       </div>
