@@ -2,7 +2,7 @@ import { createContext, useContext, useState, useEffect, useCallback } from 'rea
 import { supabase } from '../lib/supabaseClient';
 import { clasificarErrorSupabase } from '../lib/erroresSupabase';
 import { normalizarHora } from '../utils/dateHelpers';
-import { capitalizarPalabras } from '../utils/formatters';
+import { capitalizarPalabras, generarCodigoCorto } from '../utils/formatters';
 
 const TurnosContext = createContext();
 
@@ -109,6 +109,7 @@ const camposTurno = (t) => ({
   es_fijo: Boolean(t.es_fijo),
   notas: t.notas || null,
   token_cancelacion: t.token_cancelacion || crypto.randomUUID(),
+  codigo_cancelacion: t.codigo_cancelacion || null,
   motivo_cancelacion: t.motivo_cancelacion || null,
   cancelado_el: t.cancelado_el || null,
   turno_fijo_id: t.turno_fijo_id || null,
@@ -280,6 +281,7 @@ export function TurnosProvider({ children }) {
       const payload = {
         ...camposTurno(nuevoTurno),
         token_cancelacion: nuevoTurno.token_cancelacion || crypto.randomUUID(),
+        codigo_cancelacion: nuevoTurno.codigo_cancelacion || generarCodigoCorto(),
       };
 
       let fila;

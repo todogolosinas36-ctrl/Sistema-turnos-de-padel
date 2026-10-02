@@ -1,5 +1,5 @@
 import { lazy, Suspense } from 'react';
-import { BrowserRouter, Routes, Route, useSearchParams } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, useSearchParams, useParams } from 'react-router-dom';
 import { ThemeProvider } from './context/ThemeContext';
 import { TurnosProvider } from './context/TurnosContext';
 import { ArticulosProvider } from './context/ArticulosContext';
@@ -43,6 +43,11 @@ function ClientIndex() {
   return <Home />;
 }
 
+function CancelarTurno() {
+  const { codigo } = useParams();
+  return <CancelacionView token={codigo} />;
+}
+
 export default function App() {
   return (
     <ThemeProvider>
@@ -55,6 +60,7 @@ export default function App() {
                   {/* Rutas Cliente (públicas) */}
                   <Route path="/" element={<ClientLayout />}>
                     <Route index element={<ClientIndex />} />
+                    <Route path="c/:codigo" element={<CancelarTurno />} />
                   </Route>
 
                   {/* Login Admin (público, fuera del layout protegido) */}

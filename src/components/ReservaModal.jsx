@@ -105,8 +105,8 @@ export default function ReservaModal({ isOpen, onClose, datosReserva, onSuccess 
     fechaFormateada = `${d}/${m}/${y}`;
   }
 
-  const turnoId = turnoInsertado?.token_cancelacion || turnoInsertado?.id || '';
-  const linkGestion = `https://sistema-turnos-de-padel.onrender.com/turno/${turnoId}`;
+  const codigo = turnoInsertado?.codigo_cancelacion || turnoInsertado?.token_cancelacion || '';
+  const linkGestion = `${window.location.origin}/c/${codigo}`;
 
   const mensajeWhatsApp = `🎾 *NUEVA RESERVA - ${nombreComplejo.toUpperCase()}* 🎾
 

@@ -18,7 +18,7 @@ export default function CancelacionView({ token }) {
         const { data, error: queryError } = await supabase
           .from('turnos')
           .select('*, canchas(nombre)')
-          .eq('token_cancelacion', token)
+          .or(`token_cancelacion.eq.${token},codigo_cancelacion.eq.${token}`)
           .maybeSingle();
 
         if (queryError || !data) {
@@ -61,7 +61,7 @@ export default function CancelacionView({ token }) {
           estado: 'cancelado',
           cancelado_el: new Date().toISOString(),
         })
-        .eq('token_cancelacion', token);
+        .eq('id', turno.id);
 
       if (updateError) {
         console.error('Error al cancelar turno:', updateError);
