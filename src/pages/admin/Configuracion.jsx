@@ -186,9 +186,7 @@ export default function Configuracion() {
     <div className="max-w-4xl mx-auto w-full flex flex-col gap-5 sm:gap-8 pb-10">
       {/* ─── Cabecera ─── */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <h1 className="text-xl sm:text-2xl font-black text-zinc-900 tracking-tight">
-          Configuración
-        </h1>
+        
         {modoLocal && (
           <button
             type="button"

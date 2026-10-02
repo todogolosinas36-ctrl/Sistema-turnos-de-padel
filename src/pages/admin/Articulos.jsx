@@ -144,11 +144,7 @@ export default function Articulos() {
     <div className="space-y-4 sm:space-y-6 max-w-6xl mx-auto w-full pb-10">
       {/* ─── Cabecera ─── */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4">
-        <div>
-          <h1 className="text-xl sm:text-2xl font-black text-zinc-900 tracking-tight">
-            Artículos
-          </h1>
-        </div>
+      
 
         <button
           type="button"

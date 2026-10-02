@@ -122,14 +122,7 @@ export default function Dashboard() {
 
   return (
     <div className="max-w-7xl mx-auto w-full">
-      <div className="mb-6 sm:mb-8">
-        <h1 className="text-xl sm:text-2xl font-black text-zinc-900 tracking-tight">
-          Resumen Operativo
-        </h1>
-        <p className="text-xs text-slate-500 font-medium mt-1">
-          Datos del {new Date().toLocaleDateString('es-AR', { weekday: 'long', day: 'numeric', month: 'long' })}
-        </p>
-      </div>
+      
 
       <div className="grid grid-cols-2 xl:grid-cols-4 gap-3 sm:gap-5 mb-6 sm:mb-8">
         <StatCard
