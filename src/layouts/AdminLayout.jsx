@@ -15,7 +15,6 @@ import {
   Coffee,
   AlertTriangle,
   CheckCheck,
-  CalendarDays,
 } from 'lucide-react';
 import LogoPadel from '../components/LogoPadel';
 import { useTheme } from '../context/ThemeContext';
