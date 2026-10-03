@@ -281,10 +281,11 @@ export function extraerClasificados(
   tablas: readonly TablaFila[],
   clasificadosPorZona?: ReadonlyMap<string, number>,
 ): { zona: string; primero: Pareja; segundo: Pareja; extras?: Pareja[] }[] {
+  // Agrupar por zona_id para poder leer clasificadosPorZona correctamente
   const porZona = new Map<string, TablaFila[]>();
 
   for (const fila of tablas) {
-    const key = fila.zona ?? fila.zona_id;
+    const key = fila.zona_id;
     if (!key) continue;
     if (!porZona.has(key)) porZona.set(key, []);
     porZona.get(key)!.push(fila);
@@ -292,13 +293,15 @@ export function extraerClasificados(
 
   const out: { zona: string; primero: Pareja; segundo: Pareja; extras?: Pareja[] }[] = [];
 
-  for (const [zona, filas] of porZona) {
+  for (const [zonaId, filas] of porZona) {
     if (filas.length < 2) continue;
     const ordenadas = [...filas].sort((a, b) => a.posicion - b.posicion);
-    const cupo = clasificadosPorZona?.get(zona) ?? 2;
+    const cupo = clasificadosPorZona?.get(zonaId) ?? 2;
     const extras = cupo > 2 ? ordenadas.slice(2, cupo).map(f => f.pareja) : undefined;
+    const zonaNombre = ordenadas[0].zona ?? zonaId;
+    
     out.push({
-      zona,
+      zona: zonaNombre,
       primero: ordenadas[0].pareja,
       segundo: ordenadas[1].pareja,
       ...(extras && extras.length > 0 ? { extras } : {}),

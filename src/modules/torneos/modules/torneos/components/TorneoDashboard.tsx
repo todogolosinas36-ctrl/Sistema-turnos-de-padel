@@ -246,15 +246,19 @@ export function TorneoDashboard({ mostrarSelectorTorneo = true }: TorneoDashboar
             </button>
           </Card>
         ) : categorias.length === 0 ? (
-          <Card className="p-10 text-center">
-            <h2 className="text-base font-semibold text-slate-700">Este torneo todavía no tiene categorías</h2>
-            <p className="mx-auto mt-1 max-w-md text-sm text-slate-500">
+          <Card className="p-10 text-center flex flex-col items-center justify-center border border-slate-200 shadow-sm rounded-2xl bg-white min-h-[300px]">
+            <h2 className="text-xl font-extrabold text-slate-900">Este torneo todavía no tiene categorías</h2>
+            <p className="mx-auto mt-2 max-w-md text-sm text-slate-600 font-medium">
               Las categorías son las líneas de juego ("7ma Caballeros", "5ta Damas"…). Cada una lleva sus
-              parejas, sus zonas y su cuadro eliminatorio, completamente independiente de las demás.
+              parejas, sus zonas y su cuadro eliminatorio.
             </p>
-            <Button variante="primario" className="mt-4" onClick={() => setModalCategoria(true)}>
-              Crear categoría
-            </Button>
+            <button
+              className="mt-6 bg-blue-600 hover:bg-blue-700 text-white font-bold px-6 py-3 rounded-xl shadow-md flex items-center gap-2 transition-all active:scale-95"
+              onClick={() => setModalCategoria(true)}
+            >
+              <Plus className="w-5 h-5" />
+              Crear Primera Categoría
+            </button>
           </Card>
         ) : !categoria ? (
           <Card className="p-10 text-center">
@@ -306,7 +310,14 @@ export function TorneoDashboard({ mostrarSelectorTorneo = true }: TorneoDashboar
       <FormCategoriaModal
         abierto={modalCategoria}
         onCerrar={() => setModalCategoria(false)}
-        onCrear={acciones.crearCategoria}
+        onCrear={async (nombre, precio) => {
+          const r = await acciones.crearCategoria(nombre, precio);
+          if (r.ok && r.data) {
+            acciones.seleccionarCategoria(r.data.id);
+            acciones.setTab('inscripciones');
+          }
+          return r;
+        }}
       />
 
       {/* Modal de confirmación para eliminar torneo */}
@@ -477,18 +488,8 @@ function FormTorneoModal({
       onCerrar={onCerrar}
       titulo="Nuevo torneo"
       descripcion="Después vas a poder crear las categorías (7ma, 5ta, etc.)."
-      pie={
-        <>
-          <Button variante="fantasma" onClick={onCerrar} disabled={enviando}>
-            Cancelar
-          </Button>
-          <Button variante="primario" type="submit" form="form-torneo" cargando={enviando}>
-            Crear torneo
-          </Button>
-        </>
-      }
     >
-      <form id="form-torneo" onSubmit={enviar} className="space-y-4" noValidate>
+      <form id="form-torneo" onSubmit={enviar} className="space-y-4 mt-2" noValidate>
         {error && <Alerta tono="error">{error}</Alerta>}
         <Input
           label="Nombre del torneo"
@@ -548,6 +549,26 @@ function FormTorneoModal({
             ))}
           </div>
         </div>
+
+        <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-100 mt-6">
+          <Button variante="fantasma" type="button" onClick={onCerrar} disabled={enviando}>
+            Cancelar
+          </Button>
+          <button
+            type="submit"
+            disabled={enviando}
+            className="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold shadow-md shadow-blue-200 transition-all flex items-center justify-center gap-2 disabled:opacity-70"
+          >
+            {enviando ? (
+              <>
+                <Spinner className="w-5 h-5 text-white" />
+                Creando...
+              </>
+            ) : (
+              'Crear Torneo'
+            )}
+          </button>
+        </div>
       </form>
     </Modal>
   );
@@ -593,18 +614,8 @@ function FormCategoriaModal({
       ancho="sm"
       titulo="Nueva categoría"
       descripcion="Cada categoría tiene sus propias parejas, zonas y cuadro eliminatorio."
-      pie={
-        <>
-          <Button variante="fantasma" onClick={onCerrar} disabled={enviando}>
-            Cancelar
-          </Button>
-          <Button variante="primario" type="submit" form="form-categoria" cargando={enviando}>
-            Crear categoría
-          </Button>
-        </>
-      }
     >
-      <form id="form-categoria" onSubmit={enviar} className="space-y-4" noValidate>
+      <form id="form-categoria" onSubmit={enviar} className="space-y-4 mt-2" noValidate>
         {error && <Alerta tono="error">{error}</Alerta>}
         <Input
           label="Nombre"
@@ -624,6 +635,25 @@ function FormCategoriaModal({
           onChange={(e) => setPrecio(e.target.value)}
           ayuda="Se usa para calcular el saldo pendiente de cada pareja."
         />
+        <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-100 mt-6">
+          <Button variante="fantasma" type="button" onClick={onCerrar} disabled={enviando}>
+            Cancelar
+          </Button>
+          <button
+            type="submit"
+            disabled={enviando}
+            className="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold shadow-md shadow-blue-200 transition-all flex items-center justify-center gap-2 disabled:opacity-70"
+          >
+            {enviando ? (
+              <>
+                <Spinner className="w-5 h-5 text-white" />
+                Creando...
+              </>
+            ) : (
+              'Crear Categoría'
+            )}
+          </button>
+        </div>
       </form>
     </Modal>
   );

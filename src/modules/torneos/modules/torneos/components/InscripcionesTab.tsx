@@ -26,6 +26,7 @@ import {
   Td,
   Th,
 } from './ui';
+import { UserPlus } from 'lucide-react';
 
 const TONO_PAGO: Record<EstadoPago, 'peligro' | 'advertencia' | 'exito'> = {
   pendiente: 'peligro',
@@ -141,9 +142,13 @@ export function InscripcionesTab() {
       {/* Acciones */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">
-          <Button variante="primario" onClick={abrirAlta} icono={<IconoMas />}>
-            Inscribir pareja
-          </Button>
+          <button
+            onClick={abrirAlta}
+            className="bg-blue-600 hover:bg-blue-700 text-white font-bold px-4 py-2.5 rounded-xl shadow-sm shadow-blue-200 flex items-center gap-2 text-sm transition-all cursor-pointer"
+          >
+            <UserPlus className="w-5 h-5 text-white" />
+            + Inscribir pareja
+          </button>
         </div>
 
         <div className="flex items-center gap-2">
@@ -247,9 +252,13 @@ export function InscripcionesTab() {
               }
               accion={
                 parejas.length === 0 ? (
-                  <Button variante="primario" onClick={abrirAlta}>
-                    Inscribir pareja
-                  </Button>
+                  <button
+                    onClick={abrirAlta}
+                    className="bg-blue-600 hover:bg-blue-700 text-white font-bold px-4 py-2.5 rounded-xl shadow-sm shadow-blue-200 flex items-center gap-2 text-sm transition-all cursor-pointer"
+                  >
+                    <UserPlus className="w-5 h-5 text-white" />
+                    + Inscribir pareja
+                  </button>
                 ) : undefined
               }
               icono={<IconoPersonas />}

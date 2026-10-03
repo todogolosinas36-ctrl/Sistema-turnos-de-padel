@@ -177,7 +177,7 @@ export function resolverMontoCanchaNeto(turno, precioBaseGlobal) {
 
   if (precioTotal > 0) {
     const neto = precioTotal - cantinaTotal;
-    return neto > 0 ? Math.round(neto) : (Number(precioBaseGlobal) || 0);
+    return Math.max(0, Math.round(neto));
   }
 
   return Number.isFinite(Number(precioBaseGlobal)) && Number(precioBaseGlobal) > 0
@@ -225,9 +225,15 @@ export function desglosarMetodosPago(monto, metodo) {
 
     const sumaParcial = efec + transf + deb + cred;
     if (sumaParcial > 0) {
-      const remanente = total - sumaParcial;
-      if (remanente > 0) efec += remanente;
-      return { efectivo: efec, transferencia: transf, debito: deb, credito: cred };
+      // Asignación proporcional para que la suma de partes sea EXACTAMENTE igual al `total` solicitado
+      const factor = total / sumaParcial;
+      
+      const resEfec = Math.round(efec * factor);
+      const resTransf = Math.round(transf * factor);
+      const resDeb = Math.round(deb * factor);
+      const resCred = total - (resEfec + resTransf + resDeb); // absorbemos redondeo en el último
+
+      return { efectivo: resEfec, transferencia: resTransf, debito: resDeb, credito: Math.max(0, resCred) };
     }
   }
 

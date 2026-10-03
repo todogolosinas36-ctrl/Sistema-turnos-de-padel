@@ -363,7 +363,7 @@ export function Modal({ abierto, onCerrar, titulo, descripcion, children, pie, a
           </button>
         </div>
 
-        <div className="max-h-[70vh] overflow-y-auto p-5">{children}</div>
+        <div className="max-h-[90vh] overflow-y-auto p-5">{children}</div>
 
         {pie && <div className="flex justify-end gap-2 border-t border-slate-100 p-5">{pie}</div>}
       </div>

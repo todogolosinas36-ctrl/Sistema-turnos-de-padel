@@ -14,10 +14,15 @@ import {
   PauseCircle,
   PlayCircle,
   Calendar,
+  Lock,
+  Unlock,
+  Copy,
+  Trophy
 } from 'lucide-react';
 import { useTheme } from '../../context/ThemeContext';
 import { useTurnos } from '../../context/TurnosContext';
 import { supabase } from '../../lib/supabaseClient';
+import { validarLicenciaTorneo } from '../../utils/licenseManager';
 
 export default function Configuracion() {
   const { theme, changeTheme } = useTheme();
@@ -37,6 +42,8 @@ export default function Configuracion() {
     modoLocal,
     falla,
     recargar,
+    configuracionClub,
+    actualizarConfiguracionClub,
   } = useTurnos();
 
   // Estado White-Label: Nombre del Club
@@ -180,6 +187,71 @@ export default function Configuracion() {
     setDiasVisibles(Number(dias));
     setDiasGuardado(true);
     setTimeout(() => setDiasGuardado(false), 3000);
+  };
+
+  // Estado para la licencia
+  const [codigoLicencia, setCodigoLicencia] = useState('');
+  const [loadingLicencia, setLoadingLicencia] = useState(false);
+  const [mensajeLicencia, setMensajeLicencia] = useState(null);
+
+  const handleActivarLicencia = async () => {
+    setLoadingLicencia(true);
+    setMensajeLicencia(null);
+
+    try {
+      const clubId = configuracionClub?.club_id;
+      if (!clubId) {
+        throw new Error('No se encontró el ID del Club. Reconectá con Supabase.');
+      }
+
+      const esValida = await validarLicenciaTorneo(clubId, codigoLicencia);
+
+      if (esValida) {
+        const nuevosModulos = { ...(configuracionClub?.modulos_activos || {}), torneos: true };
+        
+        // Respaldar inmediatamente en localStorage
+        localStorage.setItem('modulo_torneos_activo', 'true');
+        
+        // Notificar a toda la aplicación (especialmente Sidebar/Layout)
+        window.dispatchEvent(new Event('licencia_actualizada'));
+        
+        // Persistir en Supabase de forma explícita manejando errores
+        const { error } = await supabase
+          .from('configuracion')
+          .update({
+            modulos_activos: nuevosModulos,
+            licencia_torneos: codigoLicencia.trim().toUpperCase(),
+            licencia_torneos_activada_el: new Date().toISOString()
+          })
+          .eq('club_id', clubId);
+
+        if (error) {
+          console.error("Error al persistir licencia en Supabase:", error);
+        }
+
+        // Actualizar el contexto global
+        await actualizarConfiguracionClub({
+          modulos_activos: nuevosModulos,
+          licencia_torneos: codigoLicencia.trim().toUpperCase(),
+          licencia_torneos_activada_el: new Date().toISOString()
+        });
+        
+        setMensajeLicencia({ tipo: 'exito', texto: '¡Módulo Torneos desbloqueado de forma permanente!' });
+      } else {
+        setMensajeLicencia({ tipo: 'error', texto: 'Código de licencia inválido.' });
+      }
+    } catch (err) {
+      console.error(err);
+      setMensajeLicencia({ tipo: 'error', texto: err.message || 'Error al validar licencia.' });
+    } finally {
+      setLoadingLicencia(false);
+    }
+  };
+
+  const copiarClubId = () => {
+    navigator.clipboard.writeText(configuracionClub?.club_id || '');
+    setMensajeLicencia({ tipo: 'exito', texto: 'ID de Club copiado al portapapeles' });
+    setTimeout(() => setMensajeLicencia(null), 3000);
   };
 
   return (
@@ -792,6 +864,120 @@ export default function Configuracion() {
                 <p className="text-xs text-slate-500 font-medium">Violeta y Rosa</p>
               </div>
             </button>
+          </div>
+        </div>
+      </div>
+
+      {/* ─── Sección Nueva: Módulos y Licencias Adicionales ─── */}
+      <div className="bg-slate-900 rounded-2xl shadow-xl overflow-hidden border border-slate-800 relative z-0">
+        <div className="absolute inset-0 bg-[linear-gradient(to_right,#ffffff0a_1px,transparent_1px),linear-gradient(to_bottom,#ffffff0a_1px,transparent_1px)] bg-[size:4rem_4rem] [mask-image:radial-gradient(ellipse_at_center,black_40%,transparent_85%)] -z-10 pointer-events-none" />
+        
+        {/* Cabecera */}
+        <div className="px-4 sm:px-6 py-4 border-b border-slate-800 flex items-center gap-3 backdrop-blur-md bg-slate-900/50">
+          <div className="w-8 h-8 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center border border-emerald-500/30">
+            <Unlock className="w-4 h-4" />
+          </div>
+          <div>
+            <h2 className="font-bold text-white text-base">
+              Módulos y Licencias Adicionales
+            </h2>
+            <p className="text-xs text-slate-400 font-medium">
+              Expandí las capacidades de tu sistema con add-ons de un solo pago.
+            </p>
+          </div>
+        </div>
+
+        {/* Cuerpo */}
+        <div className="p-4 sm:p-6 flex flex-col gap-6">
+          {mensajeLicencia && (
+            <div className={`p-3 rounded-xl border flex items-center gap-2.5 text-xs font-bold animate-fade-in ${
+              mensajeLicencia.tipo === 'exito'
+                ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
+                : 'bg-red-500/10 border-red-500/30 text-red-300'
+            }`}>
+              {mensajeLicencia.tipo === 'exito' ? <CheckCircle2 className="w-4 h-4 shrink-0" /> : <AlertTriangle className="w-4 h-4 shrink-0" />}
+              <span>{mensajeLicencia.texto}</span>
+            </div>
+          )}
+
+          {/* Club ID */}
+          <div className="bg-slate-950/50 rounded-xl p-4 border border-slate-800 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+            <div>
+              <p className="text-[11px] font-black text-slate-500 uppercase tracking-wider mb-1">ID Único de su Instalación (Club ID)</p>
+              <div className="flex items-center gap-2">
+                <span className="font-mono text-lg font-bold text-cyan-400">{configuracionClub?.club_id || 'Cargando...'}</span>
+                <button
+                  onClick={copiarClubId}
+                  className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+                  title="Copiar ID"
+                >
+                  <Copy className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+            <p className="text-xs text-slate-400 sm:max-w-xs leading-relaxed">
+              Enviá este identificador a tu asesor comercial de Mp sistemas para adquirir la licencia permanente de cualquier módulo cerrado.
+            </p>
+          </div>
+
+          {/* Módulo Torneos */}
+          <div className="bg-slate-800/40 rounded-xl p-5 border border-slate-700/50">
+            <div className="flex items-start justify-between gap-4 mb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center text-white shadow-lg">
+                  <Trophy className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-white font-bold text-base">Módulo de Torneos</h3>
+                  <p className="text-xs text-slate-400">Gestión de inscriptos, zonas y llaves.</p>
+                </div>
+              </div>
+              
+              {(configuracionClub?.modulos_activos?.torneos || localStorage.getItem('modulo_torneos_activo') === 'true') ? (
+                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-black bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                  <Unlock className="w-3 h-3" />
+                  LICENCIA VITALICIA ACTIVA
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-black bg-red-500/20 text-red-400 border border-red-500/30">
+                  <Lock className="w-3 h-3" />
+                  BLOQUEADO
+                </span>
+              )}
+            </div>
+
+            {(configuracionClub?.modulos_activos?.torneos || localStorage.getItem('modulo_torneos_activo') === 'true') ? (
+              <div className="bg-emerald-950/30 rounded-lg p-3 border border-emerald-500/20 flex items-center gap-3">
+                <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
+                <p className="text-sm font-medium text-emerald-200">
+                  Módulo desbloqueado permanentemente para este club. Licencia: <span className="font-mono text-emerald-400">{configuracionClub?.licencia_torneos || localStorage.getItem('licencia_torneos_codigo') || 'VITALICIA'}</span>
+                </p>
+              </div>
+            ) : (
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-end gap-3 mt-4">
+                <div className="flex-1">
+                  <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">
+                    Código de Licencia Vitalicia
+                  </label>
+                  <input
+                    type="text"
+                    value={codigoLicencia}
+                    onChange={(e) => setCodigoLicencia(e.target.value.toUpperCase())}
+                    placeholder="TRN-XXXX-XXXX"
+                    className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-sm font-bold text-white focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 transition-colors uppercase font-mono placeholder:font-sans placeholder:font-medium"
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={handleActivarLicencia}
+                  disabled={loadingLicencia || !codigoLicencia}
+                  className="bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold py-3 px-5 rounded-xl transition-colors disabled:opacity-50 flex items-center justify-center gap-2 text-sm"
+                >
+                  {loadingLicencia ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Unlock className="w-4 h-4" />}
+                  Activar Licencia Permanente
+                </button>
+              </div>
+            )}
           </div>
         </div>
       </div>

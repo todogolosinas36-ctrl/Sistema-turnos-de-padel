@@ -10,7 +10,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { EstadoPago, Pareja, ParejaInput, TorneoCategoria } from '../types';
 import { validarPareja, type ErroresCampo } from '../lib';
-import { Button, Input, Modal, Select, Textarea } from './ui';
+import { useTorneo } from '../store/TorneoStore';
+import { Input, Modal, Select, Spinner, Textarea } from './ui';
 
 const ESTADOS: { value: EstadoPago; label: string }[] = [
   { value: 'pendiente', label: 'Pendiente' },
@@ -48,11 +49,16 @@ export function ParejaFormModal({
   pareja,
   existentes = [],
 }: ParejaFormModalProps) {
+  const { torneo } = useTorneo();
   const editando = Boolean(pareja);
   const [form, setForm] = useState<ParejaInput>(VACIO);
   const [errores, setErrores] = useState<ErroresCampo>({});
   const [enviando, setEnviando] = useState(false);
   const [errorGeneral, setErrorGeneral] = useState<string | null>(null);
+
+  // Estado estructurado para las restricciones
+  type RestriccionDia = { activo: boolean; regla: 'solo' | 'no_puede'; inicio: string; fin: string };
+  const [restricciones, setRestricciones] = useState<Record<number, RestriccionDia>>({});
 
   const precio = categoria?.precio_inscripcion ?? 0;
 
@@ -70,8 +76,13 @@ export function ParejaFormModal({
         restriccion_horaria: pareja.restriccion_horaria ?? '',
         notas: pareja.notas ?? '',
       });
+      // Inicializar vacio en edición a menos que lo querramos parsear,
+      // pero por ahora es mejor que usen el input viejo si ya estaba,
+      // o arranquen de cero. Si ya habia texto, lo ponemos en notas o algo?
+      // Lo dejamos en el state pero el UI lo va a sobreescribir si lo tocan.
     } else {
       setForm({ ...VACIO, monto_abonado: 0 });
+      setRestricciones({});
     }
     setErrores({});
     setErrorGeneral(null);
@@ -118,13 +129,35 @@ export function ParejaFormModal({
 
   const enviar = async (e: React.FormEvent) => {
     e.preventDefault();
-    const encontrados = validarPareja(form);
+
+    // Construir string de restricciones
+    const diasStr = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
+    const partesRestriccion: string[] = [];
+    Object.entries(restricciones).forEach(([diaStr, r]) => {
+      if (!r.activo) return;
+      const diaNum = Number(diaStr);
+      const nombreDia = diasStr[diaNum === 7 ? 0 : diaNum];
+      if (r.inicio && r.fin) {
+        const accion = r.regla === 'solo' ? 'solo puede' : 'no puede';
+        partesRestriccion.push(`${nombreDia}: ${accion} de ${r.inicio} a ${r.fin} hs`);
+      }
+    });
+    
+    // Si editamos y ya habia una restriccion manual, la combinamos o reemplazamos
+    let restriccionFinal = form.restriccion_horaria || '';
+    if (partesRestriccion.length > 0) {
+      restriccionFinal = partesRestriccion.join(' | ');
+    }
+
+    const payload = { ...form, restriccion_horaria: restriccionFinal };
+
+    const encontrados = validarPareja(payload);
     setErrores(encontrados);
     if (Object.keys(encontrados).length > 0) return;
 
     setEnviando(true);
     setErrorGeneral(null);
-    const r = await onGuardar(form);
+    const r = await onGuardar(payload);
     setEnviando(false);
 
     if (r.ok) onCerrar();
@@ -141,16 +174,6 @@ export function ParejaFormModal({
         categoria
           ? `${categoria.nombre} · inscripción ${formatearMoneda(precio)}`
           : 'Completá los datos de los dos jugadores.'
-      }
-      pie={
-        <>
-          <Button type="button" variante="fantasma" onClick={onCerrar} disabled={enviando}>
-            Cancelar
-          </Button>
-          <Button type="submit" form="form-pareja" variante="primario" cargando={enviando}>
-            {editando ? 'Guardar cambios' : 'Inscribir pareja'}
-          </Button>
-        </>
       }
     >
       <form id="form-pareja" onSubmit={enviar} className="space-y-5" noValidate>
@@ -263,27 +286,96 @@ export function ParejaFormModal({
         {/* Restricciones */}
         <fieldset className="space-y-3 border-t border-slate-100 pt-4">
           <legend className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
-            Disponibilidad y notas
+            Disponibilidad horaria
           </legend>
-          <Textarea
-            label="Restricción horaria"
-            placeholder="Ej: no puede jugar antes de las 18 h, ni los domingos"
-            ayuda="El cronograma tiene en cuenta este texto al asignar canchas. Opcional."
-            value={form.restriccion_horaria ?? ''}
-            onChange={(e) => set('restriccion_horaria', e.target.value)}
-            error={errores.restriccion_horaria}
-            maxLength={200}
-            rows={2}
-          />
-          <Textarea
-            label="Notas internas"
-            placeholder="Ej: viene con raqueta de repuesto"
-            value={form.notas ?? ''}
-            onChange={(e) => set('notas', e.target.value)}
-            maxLength={300}
-            rows={2}
-          />
+          
+          <div className="space-y-3">
+            {torneo?.dias_juego.map(dia => {
+              const r = restricciones[dia] || { activo: false, regla: 'no_puede', inicio: '', fin: '' };
+              const diasStr = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
+              
+              return (
+                <div key={dia} className={`rounded-xl border p-3 transition-colors ${r.activo ? 'border-amber-200 bg-amber-50/50' : 'border-slate-200 bg-slate-50/50'}`}>
+                  <label className="flex items-center gap-2 cursor-pointer font-semibold text-sm text-slate-700">
+                    <input 
+                      type="checkbox" 
+                      className="rounded border-slate-300 text-amber-500 focus:ring-amber-500 w-4 h-4"
+                      checked={r.activo}
+                      onChange={e => setRestricciones(prev => ({ ...prev, [dia]: { ...r, activo: e.target.checked } }))}
+                    />
+                    ¿Tiene restricción el {diasStr[dia]}?
+                  </label>
+                  
+                  {r.activo && (
+                    <div className="mt-3 pl-6 space-y-3">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <select 
+                          className="h-9 rounded-lg border-slate-300 text-sm focus:border-amber-500 focus:ring-amber-200 bg-white"
+                          value={r.regla}
+                          onChange={e => setRestricciones(prev => ({ ...prev, [dia]: { ...r, regla: e.target.value as 'solo' | 'no_puede' } }))}
+                        >
+                          <option value="no_puede">No puede</option>
+                          <option value="solo">Puede solo</option>
+                        </select>
+                        <span className="text-sm text-slate-500">de</span>
+                        <input 
+                          type="time" 
+                          className="h-9 rounded-lg border-slate-300 text-sm focus:border-amber-500 focus:ring-amber-200 bg-white"
+                          value={r.inicio}
+                          onChange={e => setRestricciones(prev => ({ ...prev, [dia]: { ...r, inicio: e.target.value } }))}
+                        />
+                        <span className="text-sm text-slate-500">a</span>
+                        <input 
+                          type="time" 
+                          className="h-9 rounded-lg border-slate-300 text-sm focus:border-amber-500 focus:ring-amber-200 bg-white"
+                          value={r.fin}
+                          onChange={e => setRestricciones(prev => ({ ...prev, [dia]: { ...r, fin: e.target.value } }))}
+                        />
+                      </div>
+                      
+                      <div className="flex gap-2 text-xs">
+                        <button type="button" onClick={() => setRestricciones(prev => ({ ...prev, [dia]: { ...r, inicio: '09:00', fin: '13:00' } }))} className="px-2 py-1 bg-white border border-slate-200 rounded-md hover:bg-slate-50 text-slate-600 transition-colors">Mañana (09-13)</button>
+                        <button type="button" onClick={() => setRestricciones(prev => ({ ...prev, [dia]: { ...r, inicio: '13:00', fin: '19:00' } }))} className="px-2 py-1 bg-white border border-slate-200 rounded-md hover:bg-slate-50 text-slate-600 transition-colors">Tarde (13-19)</button>
+                        <button type="button" onClick={() => setRestricciones(prev => ({ ...prev, [dia]: { ...r, inicio: '19:00', fin: '23:30' } }))} className="px-2 py-1 bg-white border border-slate-200 rounded-md hover:bg-slate-50 text-slate-600 transition-colors">Noche (19-23:30)</button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="mt-4">
+            <Textarea
+              label="Notas extras (opcional)"
+              placeholder="Ej: viene con raqueta de repuesto"
+              value={form.notas ?? ''}
+              onChange={(e) => set('notas', e.target.value)}
+              maxLength={300}
+              rows={2}
+            />
+          </div>
         </fieldset>
+        
+        <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-200 mt-6 sticky bottom-0 bg-white shadow-[0_-10px_15px_-3px_rgba(255,255,255,0.9)] pb-2">
+          <button type="button" onClick={onCerrar} disabled={enviando} className="px-4 py-2.5 rounded-xl border border-slate-200 text-slate-700 font-semibold hover:bg-slate-50 transition-colors disabled:opacity-50">
+            Cancelar
+          </button>
+          <button
+            type="submit"
+            disabled={enviando}
+            className="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold shadow-md shadow-blue-200 flex items-center justify-center gap-2 transition-all cursor-pointer disabled:opacity-70"
+          >
+            {enviando ? (
+              <>
+                <Spinner className="w-5 h-5 text-white" />
+                Guardando...
+              </>
+            ) : (
+              editando ? 'Guardar cambios' : 'Inscribir Pareja'
+            )}
+          </button>
+        </div>
       </form>
     </Modal>
   );

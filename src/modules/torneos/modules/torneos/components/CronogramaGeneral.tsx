@@ -1,26 +1,22 @@
-/**
- * CronogramaGeneral — grilla por cancha con validacion de superposiciones.
- *
- * Dos partes:
- *  1. Grilla visual: una columna por cancha, con los partidos posicionados en
- *     escala de tiempo (minutes desde las 00:00) y solapados a la vista.
- *  2. Panel de conflictos: doble reserva, pareja jugando dos veces y descanso
- *     insuficiente. Los errores bloquean el guardado; las advertencias no.
- *
- * La asignacion se hace con un modal por partido: cancha + fecha + hora. Antes
- * de escribir en la base se valida en el cliente (respuesta instantanea) y la
- * RPC/RLS valida de nuevo en el servidor.
- */
-
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { useTorneo } from '../store/TorneoStore';
 import type { Cancha, Partido, PartidoAgenda } from '../types';
-import { construirGrilla, buscarSlotLibre, generarSlots, validarCronograma, resumenCronograma, ETIQUETA_FASE } from '../lib';
+import { buscarSlotLibre, generarSlots, validarCronograma, ETIQUETA_FASE } from '../lib';
 import { AsignarCanchaHorarioModal } from './AsignarCanchaHorarioModal';
-import { Alerta, Badge, Button, Card, EstadoVacio, Spinner, Tabla, Td, Th } from './ui';
+import { ScoreForm } from './ScoreForm';
+import { Alerta, Badge, Button, EstadoVacio, Spinner } from './ui';
+import { Clock, Calendar, Download, MoreVertical, AlertTriangle } from 'lucide-react';
 
-/** Alto de la grilla en px por hora de torneo. */
-const PX_POR_HORA = 96;
+function formatearHora(fecha: Date): string {
+  return fecha.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', hour12: false });
+}
+
+function formatearDiaPill(iso: string) {
+  if (!iso) return '';
+  const [y, m, d] = iso.split('-');
+  const date = new Date(Number(y), Number(m) - 1, Number(d));
+  return date.toLocaleDateString('es-AR', { weekday: 'long', day: '2-digit', month: '2-digit' }).replace(/^\w/, c => c.toUpperCase());
+}
 
 export function CronogramaGeneral() {
   const { torneo, categoria, agenda, sinAgendar, parejas, canchas, acciones, guardando, cargando } = useTorneo();
@@ -29,30 +25,25 @@ export function CronogramaGeneral() {
   const [partidoObjetivo, setPartidoObjetivo] = useState<Partido | null>(null);
   const [soloConflictos, setSoloConflictos] = useState(false);
 
+  const [scoreAbierto, setScoreAbierto] = useState(false);
+  const [partidoScore, setPartidoScore] = useState<Partido | null>(null);
+
+  const mapaParejas = useMemo(() => new Map(parejas.map((p) => [p.id, p])), [parejas]);
+
   const opcionesValidacion = useMemo(
     () => ({
       descansoMin: torneo?.descanso_min_entre_partidos ?? 30,
       duracionMin: torneo?.duracion_partido_min ?? 75,
       torneo: torneo ?? null,
     }),
-    [torneo],
+    [torneo]
   );
 
   const conflictos = useMemo(
     () => validarCronograma(agenda, opcionesValidacion, parejas),
-    [agenda, opcionesValidacion, parejas],
+    [agenda, opcionesValidacion, parejas]
   );
 
-  const resumen = useMemo(
-    () => resumenCronograma(agenda.length + sinAgendar.length, agenda.length, conflictos),
-    [agenda, sinAgendar, conflictos],
-  );
-  const grilla = useMemo(
-    () => construirGrilla(agenda, canchas, opcionesValidacion.duracionMin),
-    [agenda, canchas, opcionesValidacion.duracionMin],
-  );
-
-  /** Partidos con al menos un conflicto, para poder resaltarlos. */
   const partidosEnConflicto = useMemo(() => {
     const ids = new Set<string>();
     for (const c of conflictos) {
@@ -61,30 +52,78 @@ export function CronogramaGeneral() {
     return ids;
   }, [conflictos]);
 
-  const visibles = useMemo(
-    () => (soloConflictos ? agenda.filter((p) => partidosEnConflicto.has(p.id)) : agenda),
-    [agenda, soloConflictos, partidosEnConflicto],
-  );
+  // Obtener dias unicos basados en la agenda
+  const diasUnicos = useMemo(() => {
+    const dates = agenda
+      .filter((p) => p.inicio)
+      .map((p) => {
+        // Usar formato YYYY-MM-DD local
+        const d = p.inicio!;
+        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      });
+    return Array.from(new Set(dates)).sort();
+  }, [agenda]);
 
-  /** Franja horaria de la grilla: el torneo abre y cierra con margen. */
-  const franja = useMemo(() => {
-    const desde = aMinutos(torneo?.hora_inicio ?? '09:00');
-    const hasta = aMinutos(torneo?.hora_fin ?? '22:00');
-    return { desde, hasta: Math.max(hasta, desde + 60) };
-  }, [torneo]);
+  const [diaSeleccionado, setDiaSeleccionado] = useState<string>('');
+
+  useEffect(() => {
+    if (!diaSeleccionado && diasUnicos.length > 0) {
+      setDiaSeleccionado(diasUnicos[0]);
+    } else if (diaSeleccionado && !diasUnicos.includes(diaSeleccionado) && diasUnicos.length > 0) {
+      setDiaSeleccionado(diasUnicos[0]);
+    }
+  }, [diasUnicos, diaSeleccionado]);
+
+  // Filtrar partidos visibles por dia
+  const visibles = useMemo(() => {
+    let filtrados = agenda;
+    if (soloConflictos) {
+      filtrados = filtrados.filter((p) => partidosEnConflicto.has(p.id));
+    }
+    return filtrados.filter((p) => {
+      if (!p.inicio) return false;
+      const d = p.inicio;
+      const isoLocal = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      return isoLocal === diaSeleccionado;
+    });
+  }, [agenda, soloConflictos, partidosEnConflicto, diaSeleccionado]);
+
+  const partidosPorCancha = useMemo(() => {
+    const map = new Map<string, PartidoAgenda[]>();
+    for (const c of canchas) map.set(c.id, []);
+
+    for (const p of visibles) {
+      const cid = p.cancha_id ?? 'sin_asignar';
+      if (!map.has(cid)) map.set(cid, []);
+      map.get(cid)!.push(p);
+    }
+
+    for (const [_, list] of map.entries()) {
+      list.sort((a, b) => (a.inicio?.getTime() || 0) - (b.inicio?.getTime() || 0));
+    }
+    return map;
+  }, [visibles, canchas]);
+
+  const resumenDia = useMemo(() => {
+    const jugados = visibles.filter(p => p.ganador_id !== null).length;
+    return { jugados, total: visibles.length };
+  }, [visibles]);
 
   const abrirAsignar = (partido: Partido | null) => {
     setPartidoObjetivo(partido);
     setModalAbierto(true);
   };
 
-  /** Asigna todos los partidos pendientes al primer slot libre que encuentre. */
+  const abrirScore = (partido: Partido) => {
+    setPartidoScore(partido);
+    setScoreAbierto(true);
+  };
+
   const autoCompletar = async () => {
     if (!torneo || sinAgendar.length === 0) return;
 
     const slots = generarSlots(torneo, canchas);
     const asignaciones: { partido_id: string; cancha_id: string | null; horario: string | null }[] = [];
-    // Copia de la agenda que se va llenando, para respetar lo ya asignado.
     const agendaSimulada: PartidoAgenda[] = [...agenda];
 
     for (const partido of sinAgendar) {
@@ -122,7 +161,7 @@ export function CronogramaGeneral() {
     }
     await acciones.guardarAgenda(asignaciones);
     acciones.setAviso(
-      `${asignaciones.length} partidos asignados. Quedaron ${sinAgendar.length - asignaciones.length} sin horario.`,
+      `${asignaciones.length} partidos asignados. Quedaron ${sinAgendar.length - asignaciones.length} sin horario.`
     );
   };
 
@@ -136,21 +175,54 @@ export function CronogramaGeneral() {
   }
 
   return (
-    <div className="space-y-5">
-      {/* Resumen */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap items-center gap-2">
-          <Badge tono="cancha">
-            {resumen.conHorario} con horario · {resumen.sinHorario} pendientes
-          </Badge>
-          {resumen.errores > 0 && <Badge tono="peligro">{resumen.errores} conflictos</Badge>}
-          {resumen.advertencias > 0 && <Badge tono="advertencia">{resumen.advertencias} avisos</Badge>}
-          {cargando && <Spinner className="h-4 w-4 text-slate-400" />}
+    <div className="space-y-6">
+      {/* Controles del Cronograma */}
+      <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-4 bg-white p-4 rounded-2xl shadow-sm border border-slate-200">
+        <div className="flex flex-col gap-3">
+          {/* Tabs de Días */}
+          <div className="flex items-center gap-2 overflow-x-auto pb-1 max-w-full">
+            {diasUnicos.length === 0 ? (
+              <span className="text-sm font-medium text-slate-500 flex items-center gap-2">
+                <Calendar className="w-4 h-4" /> Sin días programados
+              </span>
+            ) : (
+              diasUnicos.map((dia) => (
+                <button
+                  key={dia}
+                  onClick={() => setDiaSeleccionado(dia)}
+                  className={`shrink-0 px-4 py-2 rounded-xl text-sm font-bold flex items-center gap-2 transition-all ${
+                    diaSeleccionado === dia 
+                      ? 'bg-slate-800 text-white shadow-md' 
+                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                  }`}
+                >
+                  <Calendar className="w-4 h-4" />
+                  {formatearDiaPill(dia)}
+                </button>
+              ))
+            )}
+          </div>
+          
+          {/* Resumen del Día Seleccionado */}
+          {diaSeleccionado && (
+            <div className="flex items-center gap-2 text-sm">
+              <span className="font-semibold text-slate-700">Resumen del día:</span>
+              <Badge tono="cancha">{resumenDia.jugados} jugados</Badge>
+              <Badge tono="neutro">{resumenDia.total - resumenDia.jugados} pendientes</Badge>
+              {sinAgendar.length > 0 && <Badge tono="advertencia">{sinAgendar.length} sin asignar (total)</Badge>}
+              {cargando && <Spinner className="w-4 h-4 ml-2 text-blue-500" />}
+            </div>
+          )}
         </div>
 
-        <div className="flex items-center gap-2">
-          <Button variante="fantasma" onClick={() => setSoloConflictos((v) => !v)}>
-            {soloConflictos ? 'Ver todos' : 'Solo conflictos'}
+        {/* Acciones Rápidas */}
+        <div className="flex items-center gap-2 shrink-0 border-t xl:border-t-0 pt-3 xl:pt-0 border-slate-100">
+          <Button 
+            variante="fantasma" 
+            onClick={() => window.print()}
+            title="Imprimir Fixture"
+          >
+            <Download className="w-4 h-4 mr-2" /> Descargar PDF
           </Button>
           <Button
             variante="secundario"
@@ -158,238 +230,175 @@ export function CronogramaGeneral() {
             disabled={guardando || sinAgendar.length === 0}
             title={sinAgendar.length === 0 ? 'No hay partidos pendientes de asignar' : undefined}
           >
-            Completar automáticamente
-          </Button>
-          <Button variante="primario" onClick={() => abrirAsignar(null)} disabled={sinAgendar.length === 0}>
-            Asignar horario
+            Auto-programar
           </Button>
         </div>
       </div>
 
-      {/* Conflictos */}
+      {/* Conflictos globales */}
       {conflictos.length > 0 && (
-        <Alerta tono={resumen.errores > 0 ? 'error' : 'advertencia'}>
-          <p className="font-medium">
-            {resumen.errores > 0
-              ? `Hay ${resumen.errores} conflictos que impiden dar por buena la agenda:`
-              : 'Avisos de la agenda:'}
-          </p>
-          <ul className="mt-1.5 space-y-1 text-xs">
+        <Alerta tono="error">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between w-full gap-3">
+            <p className="font-bold flex items-center gap-2">
+              <AlertTriangle className="w-5 h-5 shrink-0" />
+              Se detectaron {conflictos.length} conflictos en el cronograma
+            </p>
+            <Button tamano="sm" variante="secundario" onClick={() => setSoloConflictos(v => !v)}>
+              {soloConflictos ? 'Ver todos los partidos' : 'Filtrar con conflictos'}
+            </Button>
+          </div>
+          <ul className="mt-2 space-y-1 text-sm font-medium opacity-90">
             {conflictos.slice(0, 6).map((c, i) => (
-              <li key={`${c.tipo}-${i}`} className="flex items-start gap-1.5">
-                <span aria-hidden>{c.severidad === 'error' ? '✕' : '!'}</span>
-                <span>{c.mensaje}</span>
-              </li>
+              <li key={i} className="list-disc ml-5">{c.mensaje}</li>
             ))}
-            {conflictos.length > 6 && <li>… y {conflictos.length - 6} más.</li>}
+            {conflictos.length > 6 && <li className="ml-5 mt-1">... y {conflictos.length - 6} más.</li>}
           </ul>
         </Alerta>
       )}
 
-      {/* Grilla por cancha */}
+      {/* Grid de Canchas para el Día */}
       {agenda.length === 0 ? (
         <EstadoVacio
           titulo="Todavía no hay partidos con horario"
-          descripcion={
-            'Asigná cancha y horario manualmente, o usá "Completar automáticamente" para que el módulo ' +
-            'busque los slots libres respetando el descanso mínimo entre partidos de una misma pareja.'
-          }
+          descripcion="Asigná cancha y horario manualmente, o usá 'Auto-programar' para llenar la grilla automáticamente."
           accion={
             <Button variante="primario" onClick={autoCompletar} disabled={sinAgendar.length === 0}>
-              Completar automáticamente
+              Auto-programar
             </Button>
           }
         />
+      ) : diasUnicos.length === 0 ? (
+        <EstadoVacio
+          titulo="No hay partidos con fecha asignada"
+          descripcion="Todos los partidos están pendientes de ser programados."
+        />
       ) : (
-        <Card className="overflow-x-auto p-4">
-          <div className="flex min-w-max gap-3">
-            {grilla.map((columna) => (
-              <ColumnaCancha
-                key={columna.cancha.id}
-                columna={columna}
-                franja={franja}
-                partidosEnConflicto={partidosEnConflicto}
-                onAbrir={abrirAsignar}
-              />
-            ))}
-          </div>
-        </Card>
-      )}
-
-      {/* Listado plano: útil para imprimir o copiar */}
-      <Card>
-        <div className="border-b border-slate-100 px-4 py-2.5">
-          <h3 className="text-sm font-semibold text-slate-800">
-            Agenda por orden de hora ({visibles.length})
-          </h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 items-start">
+          {canchas.map((cancha) => {
+            const partidos = partidosPorCancha.get(cancha.id) || [];
+            return (
+              <div key={cancha.id} className="bg-slate-50/70 p-4 rounded-2xl border border-slate-200 min-h-[600px] flex flex-col gap-3 shadow-sm">
+                <div className="flex justify-between items-center pb-2 border-b border-slate-200 mb-2">
+                  <h3 className="font-extrabold text-slate-800 tracking-tight uppercase text-lg">{cancha.nombre}</h3>
+                  <span className="bg-white border border-slate-200 text-slate-600 text-xs font-bold px-3 py-1 rounded-full shadow-sm">
+                    {partidos.length} partidos
+                  </span>
+                </div>
+                
+                {partidos.length === 0 ? (
+                  <div className="flex-1 flex items-center justify-center text-sm font-medium text-slate-400 border-2 border-dashed border-slate-200 rounded-xl h-40">
+                    Sin partidos
+                  </div>
+                ) : (
+                  partidos.map((p) => (
+                    <MatchCard 
+                      key={p.id} 
+                      partido={p} 
+                      onAbrir={abrirAsignar} 
+                      onCargar={abrirScore}
+                      enConflicto={partidosEnConflicto.has(p.id)} 
+                    />
+                  ))
+                )}
+              </div>
+            );
+          })}
         </div>
-        {visibles.length === 0 ? (
-          <p className="p-6 text-center text-sm text-slate-400">No hay partidos para mostrar.</p>
-        ) : (
-          <Tabla>
-            <thead>
-              <tr>
-                <Th>Horario</Th>
-                <Th>Cancha</Th>
-                <Th>Fase</Th>
-                <Th>Pareja 1</Th>
-                <Th>Pareja 2</Th>
-                <Th alinear="centro">Resultado</Th>
-                <Th alinear="derecha">Estado</Th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {[...visibles]
-                .sort((a, b) => (a.inicio?.getTime() ?? 0) - (b.inicio?.getTime() ?? 0))
-                .map((p) => (
-                  <tr
-                    key={p.id}
-                    className={partidosEnConflicto.has(p.id) ? 'bg-red-50/50' : undefined}
-                  >
-                    <Td className="whitespace-nowrap tabular-nums">
-                      {p.inicio ? formatearHora(p.inicio) : '—'}
-                      {p.fin && (
-                        <span className="text-xs text-slate-400"> · {formatearHora(p.fin)}</span>
-                      )}
-                    </Td>
-                    <Td>{p.cancha?.nombre ?? <span className="text-slate-400">sin asignar</span>}</Td>
-                    <Td>
-                      <Badge tono="neutro">{ETIQUETA_FASE[p.fase] ?? p.fase}</Badge>
-                    </Td>
-                    <Td>{p.pareja_1 ? `${p.pareja_1.j1_nombre} / ${p.pareja_1.j2_nombre}` : 'Por definir'}</Td>
-                    <Td>{p.pareja_2 ? `${p.pareja_2.j1_nombre} / ${p.pareja_2.j2_nombre}` : 'Por definir'}</Td>
-                    <Td alinear="centro" className="tabular-nums">
-                      {p.set1_p1 !== null
-                        ? `${p.set1_p1}-${p.set1_p2}` +
-                          (p.set2_p1 !== null ? ` ${p.set2_p1}-${p.set2_p2}` : '') +
-                          (p.set3_p1 !== null ? ` TB ${p.set3_p1}-${p.set3_p2}` : '')
-                        : '—'}
-                    </Td>
-                    <Td alinear="derecha">
-                      <Button tamano="sm" variante="fantasma" onClick={() => abrirAsignar(p)}>
-                        Reasignar
-                      </Button>
-                    </Td>
-                  </tr>
-                ))}
-            </tbody>
-          </Tabla>
-        )}
-      </Card>
+      )}
 
       <AsignarCanchaHorarioModal
         abierto={modalAbierto}
         onCerrar={() => setModalAbierto(false)}
         partido={partidoObjetivo}
       />
+
+      <ScoreForm
+        abierto={scoreAbierto}
+        onCerrar={() => setScoreAbierto(false)}
+        partido={partidoScore}
+        parejas={mapaParejas}
+        onGuardar={acciones.guardarResultado}
+        cargando={guardando}
+      />
     </div>
   );
 }
 
 /* -------------------------------------------------------------------------- */
-/* Columna de una cancha en la grilla                                           */
+/* Tarjeta de Partido Moderna (Match Card)                                    */
 /* -------------------------------------------------------------------------- */
 
-function ColumnaCancha({
-  columna,
-  franja,
-  partidosEnConflicto,
-  onAbrir,
-}: {
-  columna: ReturnType<typeof construirGrilla>[number];
-  franja: { desde: number; hasta: number };
-  partidosEnConflicto: Set<string>;
-  onAbrir: (p: Partido) => void;
+function MatchCard({ 
+  partido, 
+  onAbrir, 
+  onCargar,
+  enConflicto 
+}: { 
+  partido: PartidoAgenda; 
+  onAbrir: (p: Partido) => void; 
+  onCargar: (p: Partido) => void;
+  enConflicto: boolean 
 }) {
-  const horas = useMemo(() => {
-    const out: number[] = [];
-    for (let m = Math.floor(franja.desde / 60); m <= Math.ceil(franja.hasta / 60); m++) out.push(m * 60);
-    return out;
-  }, [franja]);
-
-  const altoTotal = ((franja.hasta - franja.desde) / 60) * PX_POR_HORA;
+  const resuelto = partido.ganador_id !== null;
+  const p1Nombre = partido.pareja_1 ? `${partido.pareja_1.j1_nombre} / ${partido.pareja_1.j2_nombre}` : 'Por definir';
+  const p2Nombre = partido.pareja_2 ? `${partido.pareja_2.j1_nombre} / ${partido.pareja_2.j2_nombre}` : 'Por definir';
 
   return (
-    <div className="w-52 shrink-0">
-      {/* Cabecera de la cancha */}
-      <div className="mb-2 flex items-center justify-between">
-        <span className="text-sm font-semibold text-slate-700">{columna.cancha.nombre}</span>
-        <span className="text-xs text-slate-400">{columna.total}</span>
+    <div className={`bg-white rounded-xl p-4 shadow-sm border ${enConflicto ? 'border-red-400 bg-red-50' : 'border-slate-200/80 hover:border-slate-300 hover:shadow-md'} transition-all`}>
+      {/* Header */}
+      <div className="flex justify-between items-center mb-3">
+        <span className="bg-blue-50 text-blue-700 font-bold text-xs px-2.5 py-1 rounded-lg border border-blue-100 flex items-center gap-1.5">
+          <Clock className="w-3.5 h-3.5" />
+          {partido.inicio ? formatearHora(partido.inicio) : '—'}
+        </span>
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-2 py-1 rounded-md uppercase tracking-wider">
+            {ETIQUETA_FASE[partido.fase] ?? partido.fase}
+          </span>
+          <button 
+            onClick={() => onAbrir(partido)} 
+            className="text-slate-400 hover:text-blue-600 transition-colors p-1 -mr-1 rounded-md hover:bg-slate-50" 
+            title="Reasignar horario"
+          >
+             <MoreVertical className="w-4 h-4" />
+          </button>
+        </div>
       </div>
 
-      {columna.celdas.length === 0 ? (
-        <div
-          className="rounded-lg border border-dashed border-slate-200 bg-slate-50/50 p-4 text-center text-xs text-slate-400"
-          style={{ height: altoTotal }}
-        >
-          Sin partidos
+      {/* Cuerpo */}
+      <div className="flex flex-col text-center px-2">
+        <span className={`text-sm font-semibold truncate ${partido.ganador_id === partido.pareja_1_id ? 'text-green-600' : 'text-slate-800'}`}>
+          {p1Nombre}
+        </span>
+        <div className="flex justify-center my-1.5">
+          <span className="text-[10px] font-bold text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full w-fit">VS</span>
         </div>
-      ) : (
-        <div className="relative rounded-lg bg-slate-50" style={{ height: altoTotal }}>
-          {/* Rejilla horaria */}
-          {horas.map((m) => (
-            <div
-              key={m}
-              className="absolute left-0 right-0 border-t border-slate-200/70"
-              style={{ top: ((m - franja.desde) / 60) * PX_POR_HORA }}
-            >
-              <span className="absolute -top-2 left-1 bg-slate-50 px-1 text-[10px] text-slate-400">
-                {String(Math.floor(m / 60)).padStart(2, '0')}:00
-              </span>
-            </div>
-          ))}
+        <span className={`text-sm font-semibold truncate ${partido.ganador_id === partido.pareja_2_id ? 'text-green-600' : 'text-slate-800'}`}>
+          {p2Nombre}
+        </span>
+      </div>
 
-          {/* Partidos posicionados */}
-          {columna.celdas.map((celda) => {
-            const arriba = ((celda.offsetMin - franja.desde) / 60) * PX_POR_HORA;
-            const enConflicto = partidosEnConflicto.has(celda.partido.id);
-            const resuelto = celda.partido.ganador_id !== null;
-
-            return (
-              <button
-                key={celda.partido.id}
-                type="button"
-                onClick={() => onAbrir(celda.partido)}
-                className={[
-                  'absolute left-1 right-1 overflow-hidden rounded-md border p-1.5 text-left shadow-sm transition hover:z-10 hover:shadow-md',
-                  enConflicto
-                    ? 'border-red-400 bg-red-50'
-                    : resuelto
-                      ? 'border-cancha-300 bg-cancha-50'
-                      : 'border-slate-300 bg-white',
-                ].join(' ')}
-                style={{
-                  top: Math.max(arriba, 0),
-                  height: Math.max((celda.duracionMin / 60) * PX_POR_HORA - 4, 34),
-                }}
-              >
-                <p className="truncate text-[10px] font-semibold tabular-nums text-slate-500">
-                  {formatearHora(celda.inicio)} · {ETIQUETA_FASE[celda.partido.fase] ?? ''}
-                </p>
-                <p className="truncate text-[11px] font-medium text-slate-800">
-                  {celda.partido.pareja_1 ? `${celda.partido.pareja_1.j1_nombre} / ${celda.partido.pareja_1.j2_nombre}` : 'Por definir'}
-                </p>
-                <p className="truncate text-[11px] font-medium text-slate-800">
-                  {celda.partido.pareja_2 ? `${celda.partido.pareja_2.j1_nombre} / ${celda.partido.pareja_2.j2_nombre}` : 'Por definir'}
-                </p>
-              </button>
-            );
-          })}
-        </div>
-      )}
+      {/* Footer */}
+      <div className="mt-4 pt-3 border-t border-slate-50">
+        {resuelto ? (
+          <div className="text-center font-bold text-green-700 bg-green-50 rounded-lg py-2 border border-green-100 text-sm tracking-wide">
+            {partido.set1_p1 !== null
+              ? `${partido.set1_p1}-${partido.set1_p2}` +
+                (partido.set2_p1 !== null ? ` ${partido.set2_p1}-${partido.set2_p2}` : '') +
+                (partido.set3_p1 !== null ? ` TB ${partido.set3_p1}-${partido.set3_p2}` : '')
+              : 'WO'}
+          </div>
+        ) : (
+          <button 
+            onClick={() => onCargar(partido)} 
+            className="text-xs bg-slate-900 hover:bg-slate-800 text-white font-semibold px-3 py-2 rounded-lg w-full text-center transition-colors shadow-sm"
+          >
+            Cargar Resultado
+          </button>
+        )}
+      </div>
     </div>
   );
-}
-
-/* -------------------------------------------------------------------------- */
-
-function aMinutos(hhmm: string): number {
-  const [h, m] = hhmm.split(':').map(Number);
-  return (h || 0) * 60 + (m || 0);
-}
-
-function formatearHora(fecha: Date): string {
-  return fecha.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', hour12: false });
 }
 
 export default CronogramaGeneral;

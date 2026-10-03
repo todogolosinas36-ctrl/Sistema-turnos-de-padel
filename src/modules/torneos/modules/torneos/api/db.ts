@@ -372,6 +372,7 @@ export function crearDb(opciones: DbOpciones = {}) {
           nombre: z.nombre,
           orden: num(z.orden),
           created_at: z.created_at ?? '',
+          clasificados_count: z.clasificados_count != null ? num(z.clasificados_count) : 2,
           parejas: porZona.get(z.id) ?? [],
         })),
       );
@@ -497,15 +498,66 @@ export function crearDb(opciones: DbOpciones = {}) {
      */
     async guardarAgenda(
       asignaciones: { partido_id: string; cancha_id: string | null; horario: string | null }[],
+      torneoInfo?: { nombre_torneo: string; categoria_nombre: string; duracion_minutos: number }
     ): Promise<Resultado<null>> {
       if (asignaciones.length === 0) return ok(null);
-      const filas = asignaciones.map((a) => ({
-        id: a.partido_id,
-        cancha_id: a.cancha_id,
-        horario: a.horario,
-      }));
-      const r = await ejecutar<Fila[]>(t('torneo_partidos').upsert(filas, { onConflict: 'id' }));
-      return r.ok ? ok(null) : r;
+      
+      const resultados = await Promise.all(
+        asignaciones.map(async (a) => {
+          // 1. Actualizar el partido en torneo_partidos
+          const res = await ejecutar(
+            t('torneo_partidos')
+              .update({
+                cancha_id: a.cancha_id,
+                horario: a.horario,
+              })
+              .eq('id', a.partido_id)
+          );
+          if (!res.ok) return res;
+
+          // 2. Sincronizar automáticamente con la tabla general de turnos
+          if (a.cancha_id && a.horario && torneoInfo) {
+            const date = new Date(a.horario);
+            // Formatear a hora local (Argentina)
+            const fechaStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+            const horaInicioStr = `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+            
+            const endDate = new Date(date.getTime() + torneoInfo.duracion_minutos * 60000);
+            const horaFinStr = `${String(endDate.getHours()).padStart(2, '0')}:${String(endDate.getMinutes()).padStart(2, '0')}`;
+
+            const turnoPayload = {
+              id: a.partido_id, // Usamos el ID del partido para vincularlo unívocamente
+              cancha_id: a.cancha_id,
+              fecha: fechaStr,
+              hora_inicio: horaInicioStr,
+              hora_fin: horaFinStr,
+              duracion_minutos: torneoInfo.duracion_minutos,
+              cliente_nombre: `TORNEO: ${torneoInfo.nombre_torneo} (${torneoInfo.categoria_nombre})`,
+              estado: 'torneo',
+              origen: 'torneo',
+              tipo: 'torneo',
+              pago_estado: 'torneo',
+              precio: 0,
+              es_fijo: false,
+            };
+
+            await ejecutar(
+              sb.schema('public').from('turnos').upsert(turnoPayload, { onConflict: 'id' })
+            );
+          } else {
+            // Si el partido se desprograma, liberamos el bloqueo en la grilla general
+            await ejecutar(
+              sb.schema('public').from('turnos').delete().eq('id', a.partido_id)
+            );
+          }
+          return res;
+        })
+      );
+
+      const fallido = resultados.find((r) => !r.ok);
+      if (fallido) return fallido as any;
+      
+      return ok(null);
     },
 
     /* ==================================================================== */

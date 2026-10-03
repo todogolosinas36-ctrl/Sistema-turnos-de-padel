@@ -208,61 +208,86 @@ function generarPlayoffsAmpliados(
   totalClasificados: number,
   permitirByes: boolean,
 ): ResultadoPlayoffs {
-  // 1. Aplanar clasificados en orden de "fuerza" (serpenteo por posición)
-  //    Posición 1: todos los 1° de cada zona (en orden de zona)
-  //    Posición 2: todos los 2° de cada zona (en orden inverso — serpenteo)
-  //    Posición 3: todos los 3° de cada zona que tengan (en orden de zona)
-  //    etc.
   interface Seed {
     parejaId: string;
     zona: string;
-    posEnZona: number;
   }
 
   const seeds: Seed[] = [];
-
-  // Primero: todos los 1°
   for (const z of zonas) {
-    seeds.push({ parejaId: z.primero.id, zona: z.zona, posEnZona: 1 });
-  }
-
-  // Segundo: todos los 2° (serpenteo inverso)
-  for (let i = zonas.length - 1; i >= 0; i--) {
-    seeds.push({ parejaId: zonas[i].segundo.id, zona: zonas[i].zona, posEnZona: 2 });
-  }
-
-  // Extras: posición 3, 4, etc. alternando dirección
-  const maxExtras = Math.max(...zonas.map(z => z.extras?.length ?? 0));
-  for (let pos = 0; pos < maxExtras; pos++) {
-    const direccion = pos % 2 === 0 ? zonas : [...zonas].reverse();
-    for (const z of direccion) {
-      if (z.extras && z.extras[pos]) {
-        seeds.push({ parejaId: z.extras[pos].id, zona: z.zona, posEnZona: 3 + pos });
-      }
+    seeds.push({ parejaId: z.primero.id, zona: z.zona });
+    seeds.push({ parejaId: z.segundo.id, zona: z.zona });
+    if (z.extras) {
+      for (const e of z.extras) seeds.push({ parejaId: e.id, zona: z.zona });
     }
   }
 
-  // 2. Bracket size = siguiente potencia de 2
   const bracketSize = potenciaDeDosCeil(totalClasificados);
   const partidosPrimeraRonda = bracketSize / 2;
 
   if (!permitirByes && totalClasificados < bracketSize) {
     throw new ValidacionError(
       'byes_no_permitidos',
-      `Con ${totalClasificados} clasificados hacen falta ${bracketSize - totalClasificados} bye(s), ` +
-        'pero el torneo está configurado sin byes.',
+      `Con ${totalClasificados} clasificados hacen falta ${bracketSize - totalClasificados} bye(s), pero el torneo está configurado sin byes.`
     );
   }
 
-  // 3. Distribuir seeds en el bracket con separación estándar de torneo
-  //    Posiciones del bracket para que seed 1 y 2 se encuentren en la final,
-  //    seed 1-4 en semifinal, etc.
-  const bracketPositions = generarPosicionesBracket(bracketSize);
+  // Shuffle array using Fisher-Yates
+  const shuffle = <T>(array: T[]): T[] => {
+    const arr = [...array];
+    for (let i = arr.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
+    return arr;
+  };
 
-  const slots: (string | null)[] = new Array(bracketSize).fill(null);
-  for (let i = 0; i < seeds.length && i < bracketSize; i++) {
-    slots[bracketPositions[i]] = seeds[i].parejaId;
+  // Find a valid pairing where no two teams from the same zone face each other
+  let validSlots: (string | null)[] = [];
+  let found = false;
+
+  for (let attempt = 0; attempt < 2000; attempt++) {
+    const shuffled = shuffle(seeds);
+    const slots: (string | null)[] = new Array(bracketSize).fill(null);
+    
+    // Fill the slots
+    for (let i = 0; i < shuffled.length; i++) {
+      slots[i] = shuffled[i].parejaId;
+    }
+
+    // Check first round for conflicts
+    let conflict = false;
+    for (let i = 0; i < partidosPrimeraRonda; i++) {
+      const p1Id = slots[i * 2];
+      const p2Id = slots[i * 2 + 1];
+      
+      if (p1Id && p2Id) {
+        const seed1 = shuffled.find(s => s.parejaId === p1Id);
+        const seed2 = shuffled.find(s => s.parejaId === p2Id);
+        if (seed1 && seed2 && seed1.zona === seed2.zona) {
+          conflict = true;
+          break;
+        }
+      }
+    }
+
+    if (!conflict) {
+      validSlots = slots;
+      found = true;
+      break;
+    }
   }
+
+  // Fallback to purely random if we couldn't find a conflict-free draw
+  if (!found) {
+    const shuffled = shuffle(seeds);
+    validSlots = new Array(bracketSize).fill(null);
+    for (let i = 0; i < shuffled.length; i++) {
+      validSlots[i] = shuffled[i].parejaId;
+    }
+  }
+
+  const slots = validSlots;
 
   // 4. Armar partidos de primera ronda
   const partidos: PartidoGenerado[] = [];

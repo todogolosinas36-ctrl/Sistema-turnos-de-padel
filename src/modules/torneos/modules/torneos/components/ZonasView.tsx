@@ -12,12 +12,13 @@
  * hay >= 2 zonas con al menos 2 parejas.
  */
 
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { useTorneo } from '../store/TorneoStore';
 import type { Pareja, Partido, ResultadoInput, TablaFila, ZonaConParejas } from '../types';
 import { puedeGenerarPlayoffs } from '../lib';
 import { ScoreForm } from './ScoreForm';
 import { Alerta, Badge, Button, Card, CardHeader, EstadoVacio, Spinner, Tabla, Td, Th } from './ui';
+import { supabase } from '../../../lib/supabase';
 
 /* -------------------------------------------------------------------------- */
 /* Columnas de la tabla de posiciones                                           */
@@ -42,8 +43,33 @@ export function ZonasView() {
 
   const [partidoAbierto, setPartidoAbierto] = useState<Partido | null>(null);
 
-  // Clasificados por zona: por defecto 2, configurable por el admin
-  const [cuposPorZona, setCuposPorZona] = useState<Map<string, number>>(new Map());
+  const [cuposPorZona, setCuposPorZona] = useState<Map<string, number>>(() => {
+    const map = new Map<string, number>();
+    for (const z of zonas) {
+      map.set(z.id, (z as any).clasificados_count ?? 2);
+    }
+    return map;
+  });
+
+  useEffect(() => {
+    setCuposPorZona((prev) => {
+      let cambiado = false;
+      const nuevo = new Map(prev);
+      for (const z of zonas) {
+        const dbCupo = (z as any).clasificados_count;
+        // Si la DB tiene un valor, y es distinto a nuestro estado actual, actualizamos.
+        // Solo sobrescribimos si el valor viene efectivamente de la DB y es distinto.
+        if (dbCupo !== undefined && dbCupo !== prev.get(z.id)) {
+          nuevo.set(z.id, dbCupo);
+          cambiado = true;
+        } else if (dbCupo === undefined && !prev.has(z.id)) {
+          nuevo.set(z.id, 2);
+          cambiado = true;
+        }
+      }
+      return cambiado ? nuevo : prev;
+    });
+  }, [zonas]);
 
   const porPareja = useMemo(() => {
     const mapa = new Map<string, Pareja>();
@@ -139,10 +165,10 @@ export function ZonasView() {
             Regenerar fixture
           </Button>
           <Button
-            variante="primario"
+            className="bg-blue-600 hover:bg-blue-700 text-white font-bold px-4 py-2 rounded-xl shadow-sm transition-all cursor-pointer"
             onClick={() => void acciones.generarCuadroPlayoffs(cuposPorZona.size > 0 ? cuposPorZona : undefined)}
             cargando={guardando}
-            disabled={!puedeGenerarCuadro || !puedeGenerarPlayoffs(zonas.length)}
+            disabled={!puedeGenerarPlayoffs(zonas.length)}
           >
             Generar cuadro eliminatorio
           </Button>
@@ -178,10 +204,18 @@ export function ZonasView() {
                   <span className="text-[10px] text-slate-400">({maxParejasZona}p)</span>
                   <select
                     value={cupoActual}
-                    onChange={(e) => {
+                    onChange={async (e) => {
+                      const nuevoValor = Number(e.target.value);
                       const nuevo = new Map(cuposPorZona);
-                      nuevo.set(zona.id, Number(e.target.value));
+                      nuevo.set(zona.id, nuevoValor);
                       setCuposPorZona(nuevo);
+                      
+                      // Persistencia en base de datos
+                      await supabase
+                        .schema('torneo')
+                        .from('torneo_zonas')
+                        .update({ clasificados_count: nuevoValor })
+                        .eq('id', zona.id);
                     }}
                     className="h-7 w-14 rounded-md border border-slate-300 bg-white text-xs font-bold text-center text-slate-800 outline-none focus:ring-2 focus:ring-blue-500"
                   >

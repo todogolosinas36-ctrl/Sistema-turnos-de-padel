@@ -50,7 +50,7 @@ export default function ModalCobro({ isOpen, onClose, turno, onConfirmarCobro })
   const inputBusquedaGastoRef = useRef(null);
 
   // Selector de División
-  const [division, setDivision] = useState(4); // 4 jugadores por defecto en pádel
+  const [division, setDivision] = useState(turno?.cantidad_jugadores || 4); // 4 jugadores por defecto en pádel
 
   // Estado de cada jugador
   const [jugadores, setJugadores] = useState([]);
@@ -158,13 +158,18 @@ export default function ModalCobro({ isOpen, onClose, turno, onConfirmarCobro })
       setJugadores(listaRestaurada);
       listaRestaurada.forEach((j) => jugadoresPoolRef.current.set(j.id, j));
     } else {
-      setDivision(4);
-      const listaInicial = [
-        { id: 1, nombre: nombreTitular, itemsKiosco: [], pagado: false, metodoPago: 'efectivo' },
-        { id: 2, nombre: 'Jugador 2', itemsKiosco: [], pagado: false, metodoPago: 'efectivo' },
-        { id: 3, nombre: 'Jugador 3', itemsKiosco: [], pagado: false, metodoPago: 'efectivo' },
-        { id: 4, nombre: 'Jugador 4', itemsKiosco: [], pagado: false, metodoPago: 'efectivo' },
-      ];
+      const cant = turno.cantidad_jugadores || 4;
+      setDivision(cant);
+      const listaInicial = [];
+      for (let i = 1; i <= cant; i++) {
+        listaInicial.push({
+          id: i,
+          nombre: i === 1 ? nombreTitular : `Jugador ${i}`,
+          itemsKiosco: [],
+          pagado: false,
+          metodoPago: 'efectivo',
+        });
+      }
       setJugadores(listaInicial);
       listaInicial.forEach((j) => jugadoresPoolRef.current.set(j.id, j));
     }
@@ -204,6 +209,25 @@ export default function ModalCobro({ isOpen, onClose, turno, onConfirmarCobro })
 
   // Cantidad de división normalizada para cálculos
   const cantDivision = Math.max(1, parseInt(division, 10) || 1);
+
+  // Guardar en base de datos la división inmediatamente
+  const handleCambiarDivision = async (nuevoValor) => {
+    const cant = Math.max(1, parseInt(nuevoValor, 10) || 1);
+    setDivision(cant);
+
+    if (turno?.id) {
+      turno.cantidad_jugadores = cant; // Mutar en memoria para reactividad local
+      try {
+        if (typeof actualizarTurno === 'function') {
+          await actualizarTurno(turno.id, { cantidad_jugadores: cant });
+        } else {
+          await supabase.from('turnos').update({ cantidad_jugadores: cant }).eq('id', turno.id);
+        }
+      } catch (err) {
+        console.error('[ModalCobro] Error al persistir cantidad de jugadores:', err);
+      }
+    }
+  };
 
   // Cálculo de totales compartidos
   const totalGastosExtra = gastosCompartidos.reduce((sum, g) => sum + g.monto, 0);
@@ -716,7 +740,7 @@ export default function ModalCobro({ isOpen, onClose, turno, onConfirmarCobro })
                 {/* Botón Decrementar (-) */}
                 <button
                   type="button"
-                  onClick={() => setDivision((prev) => Math.max(1, (parseInt(prev, 10) || 1) - 1))}
+                  onClick={() => handleCambiarDivision(cantDivision - 1)}
                   disabled={cantDivision <= 1}
                   aria-label="Disminuir jugadores"
                   title="Disminuir jugadores"
@@ -742,7 +766,9 @@ export default function ModalCobro({ isOpen, onClose, turno, onConfirmarCobro })
                     }}
                     onBlur={() => {
                       if (!division || parseInt(division, 10) < 1) {
-                        setDivision(1);
+                        handleCambiarDivision(1);
+                      } else {
+                        handleCambiarDivision(division);
                       }
                     }}
                     className="w-11 sm:w-12 text-center bg-transparent text-white font-black text-sm sm:text-base focus:outline-none tabular-nums appearance-none [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none [-moz-appearance:_textfield]"
@@ -753,7 +779,7 @@ export default function ModalCobro({ isOpen, onClose, turno, onConfirmarCobro })
                 {/* Botón Incrementar (+) */}
                 <button
                   type="button"
-                  onClick={() => setDivision((prev) => Math.max(1, (parseInt(prev, 10) || 1) + 1))}
+                  onClick={() => handleCambiarDivision(cantDivision + 1)}
                   aria-label="Aumentar jugadores"
                   title="Aumentar jugadores"
                   className="w-8 h-8 rounded-lg bg-zinc-700 hover:bg-zinc-600 text-white flex items-center justify-center transition-all active:scale-95 cursor-pointer shrink-0"

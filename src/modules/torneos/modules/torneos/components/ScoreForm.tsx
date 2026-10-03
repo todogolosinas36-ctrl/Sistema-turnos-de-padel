@@ -52,10 +52,11 @@ export function ScoreForm({ abierto, onCerrar, partido, parejas, onGuardar, carg
   const p1 = partido?.pareja_1_id ? parejas.get(partido.pareja_1_id) ?? null : null;
   const p2 = partido?.pareja_2_id ? parejas.get(partido.pareja_2_id) ?? null : null;
 
+  const [wo, setWo] = useState(false);
+
   /**
-   * ¿Hace falta mostrar el tie-break?
-   *  - Si el set 3 ya esta cargado, se muestra siempre (poder corregirlo).
-   *  - Si no, aparece solo con el match 1-1 (cada lado gana un set).
+   * ¿Hace falta mostrar el tie-break (Set 3)?
+   * Se muestra si van 1-1 en sets.
    */
   const mostrarTieBreak = useMemo(() => {
     if (form.set3_p1 !== null || form.set3_p2 !== null) return true;
@@ -64,20 +65,12 @@ export function ScoreForm({ abierto, onCerrar, partido, parejas, onGuardar, carg
     return (a1 > b1) !== (a2 > b2);
   }, [form]);
 
-  /** El set 1 quedó cerrado (6-4, 7-5, 7-6 o 6-x): no hace falta el set 2. */
-  const set1Cerrado =
-    form.set1_p1 !== null &&
-    form.set1_p2 !== null &&
-    form.set2_p1 === null &&
-    form.set2_p2 === null &&
-    esSetTerminal(form.set1_p1, form.set1_p2);
-
   const set = (clave: keyof ResultadoInput, valor: string) => {
     const num = valor === '' ? null : Math.max(0, Math.min(9, Number(valor)));
     setForm((previo) => {
       const siguiente = { ...previo, [clave]: num } as ResultadoInput;
 
-      // Si se corrige el set 1 y el tie-break deja de aplicar, se limpia.
+      // Si se corrige el set 1 o 2 y el tie-break deja de aplicar, se limpia.
       if (clave === 'set1_p1' || clave === 'set1_p2' || clave === 'set2_p1' || clave === 'set2_p2') {
         const { set1_p1: a1, set1_p2: b1, set2_p1: a2, set2_p2: b2 } = siguiente;
         const va1a1 = a1 !== null && b1 !== null && a2 !== null && b2 !== null && (a1 > b1) !== (a2 > b2);
@@ -99,9 +92,11 @@ export function ScoreForm({ abierto, onCerrar, partido, parejas, onGuardar, carg
     e.preventDefault();
     if (!partido) return;
 
-    const encontrados = validarResultado(form);
-    setErrores(encontrados);
-    if (Object.keys(encontrados).length > 0) return;
+    if (!wo) {
+      const encontrados = validarResultado(form);
+      setErrores(encontrados);
+      if (Object.keys(encontrados).length > 0) return;
+    }
 
     const r = await onGuardar(partido.id, form);
     if (r.ok) onCerrar();
@@ -128,16 +123,16 @@ export function ScoreForm({ abierto, onCerrar, partido, parejas, onGuardar, carg
       pie={
         <>
           {yaCargado && (
-            <Button type="button" variante="fantasma" onClick={limpiar} disabled={cargando} className="mr-auto">
+            <button type="button" onClick={limpiar} disabled={cargando} className="mr-auto text-sm text-red-600 hover:text-red-700 font-medium px-2 py-1">
               Limpiar
-            </Button>
+            </button>
           )}
-          <Button type="button" variante="fantasma" onClick={onCerrar} disabled={cargando}>
+          <button type="button" onClick={onCerrar} disabled={cargando} className="px-4 py-2.5 rounded-xl border border-slate-200 text-slate-700 font-semibold hover:bg-slate-50 transition-colors disabled:opacity-50">
             Cancelar
-          </Button>
-          <Button type="submit" form="form-score" variante="primario" cargando={cargando}>
-            Guardar resultado
-          </Button>
+          </button>
+          <button type="submit" form="form-score" disabled={cargando || (Object.keys(errores).length > 0 && !wo)} className="bg-blue-600 hover:bg-blue-700 text-white font-bold px-5 py-2.5 rounded-xl shadow-md disabled:opacity-50 disabled:cursor-not-allowed transition-all">
+            {cargando ? 'Guardando...' : 'Guardar Resultado'}
+          </button>
         </>
       }
     >
@@ -162,57 +157,33 @@ export function ScoreForm({ abierto, onCerrar, partido, parejas, onGuardar, carg
         <FilaSet
           numero={1}
           obligatory
-          a1={form.set1_p1}
-          b1={form.set1_p2}
-          a2={form.set2_p1}
-          b2={form.set2_p2}
+          valorA={form.set1_p1}
+          valorB={form.set1_p2}
           errores={errores}
           onChange={set}
           iniciales1={p1 ? inicialesPareja(p1) : '?'}
           iniciales2={p2 ? inicialesPareja(p2) : '?'}
         />
 
-        {!set1Cerrado && (
-          <FilaSet
-            numero={2}
-            a1={form.set1_p1}
-            b1={form.set1_p2}
-            a2={form.set2_p1}
-            b2={form.set2_p2}
-            errores={errores}
-            onChange={set}
-            iniciales1={p1 ? inicialesPareja(p1) : '?'}
-            iniciales2={p2 ? inicialesPareja(p2) : '?'}
-          />
-        )}
-
-        {set1Cerrado && (
-          <p className="rounded-lg bg-amber-50 p-2 text-xs text-amber-800">
-            El set 1 cerró ({form.set1_p1}-{form.set1_p2}): se registra como retiro. Para jugar el set 2,{' '}
-            <button
-              type="button"
-              className="underline"
-              onClick={() => {
-                setForm((v) => ({ ...v, set2_p1: 0, set2_p2: 0 }));
-              }}
-            >
-              agregalo acá
-            </button>
-            .
-          </p>
-        )}
+        <FilaSet
+          numero={2}
+          valorA={form.set2_p1}
+          valorB={form.set2_p2}
+          errores={errores}
+          onChange={set}
+          iniciales1={p1 ? inicialesPareja(p1) : '?'}
+          iniciales2={p2 ? inicialesPareja(p2) : '?'}
+        />
 
         {mostrarTieBreak && (
-          <div className="rounded-lg border border-cancha-200 bg-cancha-50/50 p-3">
-            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-cancha-700">
-              Set 3 · Tie-break
+          <div className="rounded-lg border border-slate-200 bg-slate-50/50 p-3">
+            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-700">
+              Set 3 · Desempate
             </p>
             <FilaSet
               numero={3}
-              a1={form.set1_p1}
-              b1={form.set1_p2}
-              a2={form.set2_p1}
-              b2={form.set2_p2}
+              valorA={form.set3_p1}
+              valorB={form.set3_p2}
               errores={errores}
               onChange={set}
               iniciales1={p1 ? inicialesPareja(p1) : '?'}
@@ -221,9 +192,15 @@ export function ScoreForm({ abierto, onCerrar, partido, parejas, onGuardar, carg
           </div>
         )}
 
-        <p className="text-xs text-slate-500">
-          El ganador se calcula solo a partir de los sets. No se puede guardar un resultado empatado.
-        </p>
+        <label className="flex items-center gap-2 cursor-pointer mt-4 py-2 border-t border-slate-100">
+          <input 
+            type="checkbox" 
+            className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 w-4 h-4"
+            checked={wo}
+            onChange={e => setWo(e.target.checked)}
+          />
+          <span className="text-sm font-medium text-slate-700">Marcar como abandono / walkover (WO)</span>
+        </label>
       </form>
     </Modal>
   );
@@ -235,10 +212,8 @@ export function ScoreForm({ abierto, onCerrar, partido, parejas, onGuardar, carg
 
 function FilaSet({
   numero,
-  a1,
-  b1,
-  a2,
-  b2,
+  valorA,
+  valorB,
   errores,
   onChange,
   iniciales1,
@@ -246,22 +221,51 @@ function FilaSet({
   obligatory = false,
 }: {
   numero: 1 | 2 | 3;
-  a1: number | null;
-  b1: number | null;
-  a2: number | null;
-  b2: number | null;
+  valorA: number | null;
+  valorB: number | null;
   errores: ErroresCampo;
   onChange: (clave: keyof ResultadoInput, valor: string) => void;
   iniciales1: string;
   iniciales2: string;
   obligatory?: boolean;
 }) {
-  const valorA = numero === 1 ? a1 : numero === 2 ? a2 : null;
-  const valorB = numero === 1 ? b1 : numero === 2 ? b2 : null;
   const claveA = `set${numero}_p1` as keyof ResultadoInput;
   const claveB = `set${numero}_p2` as keyof ResultadoInput;
   const errorA = errores[claveA];
   const errorB = errores[claveB];
+  
+  const [tb1, setTb1] = useState('');
+  const [tb2, setTb2] = useState('');
+
+  const showTiebreak = 
+    (valorA === 6 && valorB === 6) ||
+    (valorA === 7 && valorB === 6) ||
+    (valorA === 6 && valorB === 7);
+
+  const handleTbChange = (isA: boolean, val: string) => {
+    if (isA) setTb1(val);
+    else setTb2(val);
+
+    if (valorA === 6 && valorB === 6) {
+      const numA = Number(isA ? val : tb1);
+      const numB = Number(isA ? tb2 : val);
+
+      if (numA >= 7 && numA - numB >= 2) {
+        onChange(claveA, '7');
+        onChange(claveB, '6');
+      } else if (numB >= 7 && numB - numA >= 2) {
+        onChange(claveA, '6');
+        onChange(claveB, '7');
+      }
+    }
+  };
+
+  let displayErrorA = errorA;
+  let displayErrorB = errorB;
+  if (valorA === 6 && valorB === 6 && (errorA === 'Un set no puede terminar empatado.' || errorB === 'Un set no puede terminar empatado.')) {
+    displayErrorA = 'Completá el tie-break para desempatar el set.';
+    displayErrorB = undefined;
+  }
 
   return (
     <div>
@@ -282,9 +286,9 @@ function FilaSet({
             onChange={(e) => onChange(claveA, e.target.value)}
             className={[
               'h-12 w-full rounded-lg border text-center text-lg font-semibold tabular-nums outline-none transition focus:ring-2',
-              errorA
+              displayErrorA
                 ? 'border-red-300 bg-red-50 text-red-700 focus:ring-red-200'
-                : 'border-slate-300 bg-white text-slate-800 focus:border-cancha-500 focus:ring-cancha-200',
+                : 'border-slate-300 bg-white text-slate-800 focus:border-blue-500 focus:ring-blue-200',
             ].join(' ')}
           />
           <span className="pointer-events-none absolute inset-y-0 left-2 flex items-center text-[10px] font-medium text-slate-400">
@@ -297,16 +301,16 @@ function FilaSet({
             aria-label={`Games de ${iniciales2} en el set ${numero}`}
             type="number"
             min={0}
-            max={9}
+            max={numero === 3 ? 99 : 9}
             inputMode="numeric"
             required={obligatory}
             value={valorB ?? ''}
             onChange={(e) => onChange(claveB, e.target.value)}
             className={[
               'h-12 w-full rounded-lg border text-center text-lg font-semibold tabular-nums outline-none transition focus:ring-2',
-              errorB
+              displayErrorB || displayErrorA
                 ? 'border-red-300 bg-red-50 text-red-700 focus:ring-red-200'
-                : 'border-slate-300 bg-white text-slate-800 focus:border-cancha-500 focus:ring-cancha-200',
+                : 'border-slate-300 bg-white text-slate-800 focus:border-blue-500 focus:ring-blue-200',
             ].join(' ')}
           />
           <span className="pointer-events-none absolute inset-y-0 right-2 flex items-center text-[10px] font-medium text-slate-400">
@@ -314,9 +318,26 @@ function FilaSet({
           </span>
         </div>
       </div>
+      
+      {showTiebreak && (
+        <div className="grid grid-cols-[2rem_1fr_1fr] items-center gap-2 mt-2">
+          <div className="col-start-2 col-span-2 flex items-center justify-center gap-2">
+            <span className="text-[10px] uppercase font-bold text-slate-500 whitespace-nowrap">Tie-Break:</span>
+            <input 
+              type="number" min="0" placeholder="0" value={tb1} onChange={e => handleTbChange(true, e.target.value)}
+              className="w-12 h-8 rounded-md border border-slate-300 text-center text-sm font-semibold focus:ring-2 focus:ring-blue-500 outline-none" 
+            />
+            <span className="text-slate-400 font-bold">-</span>
+            <input 
+              type="number" min="0" placeholder="0" value={tb2} onChange={e => handleTbChange(false, e.target.value)}
+              className="w-12 h-8 rounded-md border border-slate-300 text-center text-sm font-semibold focus:ring-2 focus:ring-blue-500 outline-none" 
+            />
+          </div>
+        </div>
+      )}
 
-      {(errorA || errorB) && (
-        <p className="mt-1 pl-10 text-xs text-red-600">{errorA || errorB}</p>
+      {(displayErrorA || displayErrorB) && (
+        <p className="mt-1 pl-10 text-xs text-red-600">{displayErrorA || displayErrorB}</p>
       )}
     </div>
   );

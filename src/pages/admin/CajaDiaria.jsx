@@ -147,6 +147,7 @@ export default function CajaDiaria() {
         .from('ventas_cantina')
         .select('*, ventas_cantina_detalle(nombre, precio, cantidad)')
         .eq('fecha', fechaISO)
+        .neq('estado', 'cancelado')
         .order('hora', { ascending: true });
 
       if (error) {
@@ -179,7 +180,8 @@ export default function CajaDiaria() {
       const { data: tData } = await supabase
         .from('turnos')
         .select('*')
-        .eq('estado', 'pagado')
+        .neq('estado', 'cancelado')
+        .or('pago_estado.in.(pagado,seña),estado.eq.pagado')
         .gte('fecha', fechaHace30Dias)
         .lte('fecha', fechaISO)
         .order('fecha', { ascending: true });
@@ -204,7 +206,11 @@ export default function CajaDiaria() {
   const turnosPagadosDelDiaTotal = useMemo(
     () =>
       obtenerTurnosDelDia(fechaISO)
-        .filter((t) => t.estado === 'pagado')
+        .filter(
+          (t) =>
+            t.estado !== 'cancelado' &&
+            ['pagado', 'seña'].includes(t.pago_estado || t.estado)
+        )
         .sort((a, b) => (a.hora_inicio || '').localeCompare(b.hora_inicio || '')),
     [obtenerTurnosDelDia, fechaISO]
   );
@@ -325,7 +331,12 @@ export default function CajaDiaria() {
       mapa.set(t.id, t);
     }
     for (const t of turnos) {
-      if (t.estado === 'pagado' && t.fecha >= fechaHace30Dias && t.fecha <= fechaISO) {
+      if (
+        t.estado !== 'cancelado' &&
+        ['pagado', 'seña'].includes(t.pago_estado || t.estado) &&
+        t.fecha >= fechaHace30Dias &&
+        t.fecha <= fechaISO
+      ) {
         mapa.set(t.id, t);
       }
     }

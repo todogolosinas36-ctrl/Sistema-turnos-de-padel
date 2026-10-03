@@ -97,6 +97,7 @@ export interface Zona {
   nombre: string;
   orden: number;
   created_at: string;
+  clasificados_count?: number;
 }
 
 /** Zona + sus parejas. Es la entrada de `generarFixtureZonas`. */

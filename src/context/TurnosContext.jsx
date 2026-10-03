@@ -117,6 +117,7 @@ const camposTurno = (t) => ({
   total_base_cancha: t.total_base_cancha !== undefined ? t.total_base_cancha : null,
   gastos_compartidos: t.gastos_compartidos || [],
   detalle_cobro: t.detalle_cobro || null,
+  cantidad_jugadores: t.cantidad_jugadores !== undefined ? t.cantidad_jugadores : 4,
 });
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -144,6 +145,38 @@ export function TurnosProvider({ children }) {
   const [colorClub, setColorClubState] = useState(
     () => localStorage.getItem(LS_COLOR_CLUB) || '#09090b'
   );
+
+  const generarClubId = () => {
+    const randomHex = Math.floor(Math.random() * 65535).toString(16).toUpperCase().padStart(4, '0');
+    return `LV-${randomHex}`;
+  };
+
+  const [configuracionClub, setConfiguracionClub] = useState({
+    club_id: generarClubId(),
+    modulos_activos: { torneos: false, cantina: true },
+    licencia_torneos: null,
+    licencia_torneos_activada_el: null
+  });
+  
+  const actualizarConfiguracionClub = async (cambios) => {
+    if (modoLocal) {
+      setConfiguracionClub(prev => ({ ...prev, ...cambios }));
+      return;
+    }
+    
+    try {
+      const { error } = await supabase
+        .from('configuracion')
+        .upsert({ id: 1, ...cambios }, { onConflict: 'id' });
+        
+      if (!error) {
+        setConfiguracionClub(prev => ({ ...prev, ...cambios }));
+      }
+    } catch (err) {
+      console.error('Error al actualizar configuración de club:', err);
+    }
+  };
+
   // Fuente de la verdad: iniciamos en null si no hay valor local para que la UI muestre
   // skeleton/cargando en vez de un valor falso hardcodeado
   const [precioBaseCancha, setPrecioBaseCanchaState] = useState(() => {
@@ -215,14 +248,23 @@ export function TurnosProvider({ children }) {
       supabase.from('canchas').select('*').order('orden'),
       supabase.from('turnos').select('*'),
       supabase.from('turnos_fijos').select('*'),
-      supabase.from('configuracion').select('precio_base').eq('id', 1).maybeSingle(),
+      supabase.from('configuracion').select('*').eq('id', 1).maybeSingle(),
     ]);
 
-    // Sincronización Global de tarifa desde Supabase (tabla configuracion)
-    if (!resConfig?.error && resConfig?.data && Number.isFinite(Number(resConfig.data.precio_base)) && Number(resConfig.data.precio_base) > 0) {
-      const precioSupabase = Number(resConfig.data.precio_base);
-      setPrecioBaseCanchaState(precioSupabase);
-      localStorage.setItem(LS_PRECIO_BASE, String(precioSupabase));
+    // Sincronización Global de tarifa y configuración desde Supabase
+    if (!resConfig?.error && resConfig?.data) {
+      if (Number.isFinite(Number(resConfig.data.precio_base)) && Number(resConfig.data.precio_base) > 0) {
+        const precioSupabase = Number(resConfig.data.precio_base);
+        setPrecioBaseCanchaState(precioSupabase);
+        localStorage.setItem(LS_PRECIO_BASE, String(precioSupabase));
+      }
+      
+      setConfiguracionClub({
+        club_id: resConfig.data.club_id || generarClubId(),
+        modulos_activos: resConfig.data.modulos_activos || { torneos: false, cantina: true },
+        licencia_torneos: resConfig.data.licencia_torneos || null,
+        licencia_torneos_activada_el: resConfig.data.licencia_torneos_activada_el || null
+      });
     }
 
     if (resCanchas.error) {
@@ -782,6 +824,9 @@ export function TurnosProvider({ children }) {
         setIncluyeManana,
         diasVisibles,
         setDiasVisibles,
+        
+        configuracionClub,
+        actualizarConfiguracionClub,
       }}
     >
       {children}

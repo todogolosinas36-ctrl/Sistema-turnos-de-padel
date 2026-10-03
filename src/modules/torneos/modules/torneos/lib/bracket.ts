@@ -110,7 +110,7 @@ export function construirBracket(partidos: readonly PartidoLike[]): Bracket {
         indice,
         alimentadoPor: ronda === 1 ? 0 : 2,
         rondasRestantes: totalRondas - ronda,
-        esBye: partido.pareja_1_id == null || partido.pareja_2_id == null,
+        esBye: ronda === 1 && (partido.pareja_1_id == null || partido.pareja_2_id == null),
         hayGanador: ganadorDe(partido) != null,
       })),
     };

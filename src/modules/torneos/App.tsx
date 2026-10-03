@@ -20,14 +20,27 @@ import { useEffect, useState } from 'react';
 import { TorneoProvider, TorneoDashboard } from './modules/torneos';
 import { estaConfigurado } from './lib/supabase';
 import { Alerta, Card } from './modules/torneos/components/ui';
+import { useTurnos } from '../../context/TurnosContext';
+import { Navigate } from 'react-router-dom';
 
 export function App() {
   // Soporta deep link: /torneos?torneo=<uuid>
   const [torneoId] = useState(() => new URLSearchParams(window.location.search).get('torneo'));
+  const { configuracionClub } = useTurnos();
 
   useEffect(() => {
     document.title = 'Torneos de Pádel';
   }, []);
+
+  if (configuracionClub) {
+    const isActivo = configuracionClub?.modulos_activos?.torneos || localStorage.getItem('modulo_torneos_activo') === 'true';
+    if (!isActivo) {
+      return <Navigate to="/admin/configuracion" replace />;
+    }
+  } else if (localStorage.getItem('modulo_torneos_activo') !== 'true' && !estaConfigurado) {
+    // Si no cargó configuracionClub todavía, pero tampoco está en local ni está configurado
+    return <Navigate to="/admin/configuracion" replace />;
+  }
 
   if (!estaConfigurado) {
     return (

@@ -62,6 +62,11 @@ const ESTADO_ESTILOS = {
     badge: 'bg-pink-200/70 text-pink-900 border border-pink-300',
     label: 'Pendiente / Seña',
   },
+  torneo: {
+    card:  'bg-indigo-100 border-indigo-300 text-indigo-900',
+    badge: 'bg-indigo-200/70 text-indigo-900 border border-indigo-300',
+    label: 'Torneo',
+  },
 };
 
 /**
@@ -454,8 +459,12 @@ function BloqueOcupado({ turno, colorHex, onAbrirCobro }) {
   const esPagoParcial = detectarPagoParcial(turno);
   const textoSplit = textoJugadoresPagados(turno);
 
+  const esTorneo = turno.estado === 'torneo' || turno.origen === 'torneo';
+
   let configEstado = ESTADO_ESTILOS.confirmado;
-  if (esAbono && esPagado) {
+  if (esTorneo) {
+    configEstado = ESTADO_ESTILOS.torneo;
+  } else if (esAbono && esPagado) {
     configEstado = ESTADO_ESTILOS.abono_pagado;
   } else if (esAbono && esPagoParcial) {
     configEstado = ESTADO_ESTILOS.abono_parcial;
@@ -472,9 +481,10 @@ function BloqueOcupado({ turno, colorHex, onAbrirCobro }) {
   return (
     <>
       <div
-        className={`absolute left-0 right-0 top-0 m-0.5 sm:m-1 border rounded-xl p-1 sm:p-2 flex flex-col items-center justify-center text-center shadow-sm hover:shadow-md transition-all duration-200 cursor-pointer overflow-hidden select-none animate-fade-in ${configEstado.card} ${showMenu ? 'z-[60] shadow-lg scale-[1.02]' : 'z-10'}`}
+        className={`absolute left-0 right-0 top-0 m-0.5 sm:m-1 border rounded-xl p-1 sm:p-2 flex flex-col items-center justify-center text-center shadow-sm hover:shadow-md transition-all duration-200 cursor-pointer overflow-hidden select-none animate-fade-in ${configEstado.card} ${showMenu ? 'z-[60] shadow-lg scale-[1.02]' : 'z-10'} ${esTorneo ? 'cursor-not-allowed pointer-events-none' : ''}`}
         style={{ height: `calc(${heightPercent}% - 6px)` }}
         onClick={() => {
+          if (esTorneo) return; // Bloqueo de Torneo no es clickeable
           if (turno.estado !== 'pagado') {
             onAbrirCobro(turno);
           } else {
@@ -922,6 +932,10 @@ export default function AgendaDiaria({ fecha: fechaProp }) {
         <div className="flex items-center gap-1.5">
           <div className="w-3.5 h-3.5 rounded-sm bg-pink-100 border border-pink-300 shadow-2xs" />
           <span className="text-xs font-semibold text-slate-600">Pendiente / Seña</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <div className="w-3.5 h-3.5 rounded-sm bg-indigo-100 border border-indigo-300 shadow-2xs" />
+          <span className="text-xs font-semibold text-slate-600">Torneo</span>
         </div>
         <div className="flex items-center gap-1.5">
           <div className="w-3.5 h-3.5 rounded-sm bg-slate-100 border border-dashed border-slate-300" />

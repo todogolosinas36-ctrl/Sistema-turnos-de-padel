@@ -652,13 +652,18 @@ export function TorneoProvider({ children, db: dbInyectado, torneoInicialId = nu
   const guardarAgenda = useCallback(
     async (asignaciones: { partido_id: string; cancha_id: string | null; horario: string | null }[]) => {
       dispatch({ tipo: 'guardando', guardando: true });
-      const r = await store.guardarAgenda(asignaciones);
+      const torneoInfo = estado.torneo && estado.categoria ? {
+        nombre_torneo: estado.torneo.nombre,
+        categoria_nombre: estado.categoria.nombre,
+        duracion_minutos: estado.torneo.duracion_partido_min ?? 90
+      } : undefined;
+      const r = await store.guardarAgenda(asignaciones, torneoInfo);
       dispatch({ tipo: 'guardando', guardando: false });
       propagarError(r);
       if (r.ok) await refrescarCategoria();
       return r;
     },
-    [store, propagarError, refrescarCategoria],
+    [store, propagarError, refrescarCategoria, estado.torneo, estado.categoria],
   );
 
   /* ------------------------------------------------------------------ */

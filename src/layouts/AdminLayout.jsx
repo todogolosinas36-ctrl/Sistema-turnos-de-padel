@@ -16,6 +16,7 @@ import {
   AlertTriangle,
   CheckCheck,
   Trophy,
+  Lock,
 } from 'lucide-react';
 import LogoPadel from '../components/LogoPadel';
 import { useTheme } from '../context/ThemeContext';
@@ -102,7 +103,7 @@ const getPageTitle = (pathname) => {
 };
 
 /* ─── Contenido del sidebar (compartido por desktop fijo y drawer mobile) ─── */
-function SidebarContent({ currentTheme, onNavigate, showCloseButton, onClose }) {
+function SidebarContent({ currentTheme, onNavigate, showCloseButton, onClose, modulosActivos, onOpenBloqueado }) {
   const location = useLocation();
 
   return (
@@ -144,32 +145,54 @@ function SidebarContent({ currentTheme, onNavigate, showCloseButton, onClose }) 
             const isActive = exact
               ? location.pathname === path
               : location.pathname.startsWith(path);
+              
+            const isTorneos = path === '/admin/torneos';
+            const torneosBloqueado = isTorneos && !modulosActivos?.torneos;
+
+            const content = (
+              <>
+                <Icon
+                  className={`shrink-0 transition-colors ${
+                    isActive ? currentTheme.iconActive : currentTheme.iconInactive
+                  } ${torneosBloqueado ? 'opacity-50' : ''}`}
+                  style={{ width: '18px', height: '18px' }}
+                />
+                <span className={`${isActive ? currentTheme.iconActive : ''} ${torneosBloqueado ? 'opacity-60' : ''}`}>
+                  {label}
+                </span>
+                {torneosBloqueado ? (
+                  <Lock className="w-3.5 h-3.5 ml-auto text-slate-500 opacity-70" />
+                ) : isActive ? (
+                  <ChevronRight
+                    className={`w-3.5 h-3.5 ml-auto transition-colors ${currentTheme.navChevron}`}
+                  />
+                ) : null}
+              </>
+            );
 
             return (
               <li key={path}>
-                <Link
-                  to={path}
-                  onClick={onNavigate}
-                  aria-current={isActive ? 'page' : undefined}
-                  className={`group flex items-center gap-3 px-3 sm:px-6 py-3.5 text-sm font-semibold transition-all relative border-r-4 rounded-l-xl sm:rounded-none ${
-                    isActive
-                      ? currentTheme.sidebarActive
-                      : currentTheme.sidebarInactive
-                  }`}
-                >
-                  <Icon
-                    className={`shrink-0 transition-colors ${
-                      isActive ? currentTheme.iconActive : currentTheme.iconInactive
+                {torneosBloqueado ? (
+                  <button
+                    onClick={onOpenBloqueado}
+                    className={`w-full group flex items-center gap-3 px-3 sm:px-6 py-3.5 text-sm font-semibold transition-all relative border-r-4 border-transparent rounded-l-xl sm:rounded-none ${currentTheme.sidebarInactive} cursor-pointer`}
+                  >
+                    {content}
+                  </button>
+                ) : (
+                  <Link
+                    to={path}
+                    onClick={onNavigate}
+                    aria-current={isActive ? 'page' : undefined}
+                    className={`group flex items-center gap-3 px-3 sm:px-6 py-3.5 text-sm font-semibold transition-all relative border-r-4 rounded-l-xl sm:rounded-none ${
+                      isActive
+                        ? currentTheme.sidebarActive
+                        : currentTheme.sidebarInactive
                     }`}
-                    style={{ width: '18px', height: '18px' }}
-                  />
-                  <span className={isActive ? currentTheme.iconActive : ''}>{label}</span>
-                  {isActive && (
-                    <ChevronRight
-                      className={`w-3.5 h-3.5 ml-auto transition-colors ${currentTheme.navChevron}`}
-                    />
-                  )}
-                </Link>
+                  >
+                    {content}
+                  </Link>
+                )}
               </li>
             );
           })}
@@ -202,7 +225,7 @@ export default function AdminLayout() {
   const location = useLocation();
   const navigate = useNavigate();
   const { theme } = useTheme();
-  const { nombreClub, colorClub, modoLocal, falla, recargar, canchas } = useTurnos();
+  const { nombreClub, colorClub, modoLocal, falla, recargar, canchas, configuracionClub } = useTurnos();
   const { user, logout } = useAuth();
   const currentTheme = themes[theme] || themes.pro;
 
@@ -210,6 +233,28 @@ export default function AdminLayout() {
   const [cerrandoSesion, setCerrandoSesion] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [alertaCancelado, setAlertaCancelado] = useState(null);
+  const [modalBloqueadoOpen, setModalBloqueadoOpen] = useState(false);
+  
+  // Estado local para reaccionar inmediatamente a la compra
+  const [licenciaTorneosActivaLocal, setLicenciaTorneosActivaLocal] = useState(
+    () => localStorage.getItem('modulo_torneos_activo') === 'true'
+  );
+
+  useEffect(() => {
+    const handleLicenciaUpdate = () => {
+      setLicenciaTorneosActivaLocal(localStorage.getItem('modulo_torneos_activo') === 'true');
+    };
+    window.addEventListener('licencia_actualizada', handleLicenciaUpdate);
+    return () => window.removeEventListener('licencia_actualizada', handleLicenciaUpdate);
+  }, []);
+
+  // Combinamos la prop del contexto con el estado local de respaldo
+  const torneosDesbloqueado = configuracionClub?.modulos_activos?.torneos || licenciaTorneosActivaLocal;
+
+  const modulosActivosEfectivos = {
+    ...configuracionClub?.modulos_activos,
+    torneos: torneosDesbloqueado
+  };
 
   const canchasRef = useRef(canchas);
   useEffect(() => {
@@ -339,7 +384,11 @@ export default function AdminLayout() {
       <aside
         className={`hidden lg:flex w-72 flex-col shrink-0 shadow-xl z-20 transition-colors duration-300 ${currentTheme.sidebar}`}
       >
-        <SidebarContent currentTheme={currentTheme} />
+        <SidebarContent 
+          currentTheme={currentTheme} 
+          modulosActivos={modulosActivosEfectivos}
+          onOpenBloqueado={() => setModalBloqueadoOpen(true)}
+        />
       </aside>
 
       {/* ─── Drawer Mobile (<lg) ─── */}
@@ -359,6 +408,11 @@ export default function AdminLayout() {
               onNavigate={() => setDrawerOpen(false)}
               showCloseButton
               onClose={() => setDrawerOpen(false)}
+              modulosActivos={modulosActivosEfectivos}
+              onOpenBloqueado={() => {
+                setDrawerOpen(false);
+                setModalBloqueadoOpen(true);
+              }}
             />
           </aside>
         </div>
@@ -596,6 +650,51 @@ export default function AdminLayout() {
             >
               ✕
             </button>
+          </div>
+        )}
+
+        {/* Modal Módulo Bloqueado */}
+        {modalBloqueadoOpen && (
+          <div className="fixed inset-0 z-[9999999] flex items-center justify-center p-4">
+            <div className="absolute inset-0 bg-slate-950/60 backdrop-blur-sm" onClick={() => setModalBloqueadoOpen(false)} />
+            <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-md w-full relative z-10 shadow-2xl animate-fade-in border border-slate-100 flex flex-col items-center text-center">
+              <button 
+                onClick={() => setModalBloqueadoOpen(false)}
+                className="absolute top-4 right-4 w-8 h-8 flex items-center justify-center rounded-full bg-slate-100 text-slate-500 hover:bg-slate-200 transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+              
+              <div className="w-16 h-16 bg-red-50 text-red-500 rounded-full flex items-center justify-center mb-5">
+                <Lock className="w-8 h-8" />
+              </div>
+              
+              <h3 className="text-xl font-black text-slate-800 mb-2">Módulo Bloqueado</h3>
+              <p className="text-sm text-slate-500 mb-6 leading-relaxed">
+                El módulo de Torneos requiere una licencia vitalicia (pago único) para ser utilizado. 
+                Tu Club ID es <strong className="text-slate-700">{configuracionClub?.club_id}</strong>.
+              </p>
+              
+              <div className="w-full flex flex-col gap-3">
+                <a
+                  href={`https://wa.me/5493816096311?text=Hola,%20me%20comunico%20para%20adquirir%20la%20licencia%20del%20m%C3%B3dulo%20de%20Torneos.%20Mi%20Club%20ID%20es:%20${configuracionClub?.club_id || ''}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="w-full bg-emerald-500 hover:bg-emerald-600 text-white font-bold py-3.5 px-4 rounded-xl transition-colors shadow-sm shadow-emerald-500/20"
+                >
+                  Contactar a Mp sistemas para activar
+                </a>
+                <button
+                  onClick={() => {
+                    setModalBloqueadoOpen(false);
+                    navigate('/admin/configuracion');
+                  }}
+                  className="w-full bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-3.5 px-4 rounded-xl transition-colors"
+                >
+                  Ya tengo un código de licencia
+                </button>
+              </div>
+            </div>
           </div>
         )}
       </div>

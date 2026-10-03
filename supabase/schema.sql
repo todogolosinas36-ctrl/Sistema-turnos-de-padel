@@ -22,6 +22,7 @@ alter table public.turnos add column if not exists gastos_compartidos jsonb defa
 alter table public.turnos add column if not exists detalle_cobro jsonb;        -- split por jugador
 alter table public.turnos add column if not exists cobrado_el timestamptz;
 alter table public.turnos add column if not exists turno_fijo_id uuid;
+alter table public.turnos add column if not exists cantidad_jugadores integer default 4;
 
 -- Índice de las consultas más frecuentes: la agenda del día y la caja.
 create index if not exists turnos_fecha_idx on public.turnos (fecha);
