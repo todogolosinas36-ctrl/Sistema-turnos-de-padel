@@ -77,6 +77,24 @@ export default function ModalCobro({ isOpen, onClose, turno, onConfirmarCobro })
     tarjeta: '',
   });
 
+  // Notificación Toast de error
+  const [toastError, setToastError] = useState(null);
+  const toastTimeoutRef = useRef(null);
+
+  const mostrarError = (mensaje) => {
+    if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
+    setToastError(mensaje);
+    toastTimeoutRef.current = setTimeout(() => {
+      setToastError(null);
+    }, 4000);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
+    };
+  }, []);
+
   // Mantener actualizado el pool de jugadores con cada cambio en los jugadores actuales
   useEffect(() => {
     jugadores.forEach((j) => {
@@ -219,12 +237,21 @@ export default function ModalCobro({ isOpen, onClose, turno, onConfirmarCobro })
       turno.cantidad_jugadores = cant; // Mutar en memoria para reactividad local
       try {
         if (typeof actualizarTurno === 'function') {
-          await actualizarTurno(turno.id, { cantidad_jugadores: cant });
+          // El UPDATE a Supabase solo modifica la columna cantidad_jugadores y NUNCA altera estado ni manda 'cancelado'
+          const res = await actualizarTurno(turno.id, { cantidad_jugadores: cant });
+          if (res === null && !turno?.id?.toString().startsWith('fijo::')) {
+            mostrarError('Error al actualizar la cantidad de jugadores');
+          }
         } else {
-          await supabase.from('turnos').update({ cantidad_jugadores: cant }).eq('id', turno.id);
+          const { error } = await supabase
+            .from('turnos')
+            .update({ cantidad_jugadores: cant })
+            .eq('id', turno.id);
+          if (error) throw error;
         }
       } catch (err) {
         console.error('[ModalCobro] Error al persistir cantidad de jugadores:', err);
+        mostrarError('Error al actualizar la cantidad de jugadores');
       }
     }
   };
@@ -1655,6 +1682,26 @@ export default function ModalCobro({ isOpen, onClose, turno, onConfirmarCobro })
             </div>
           );
         })()}
+
+        {/* Toast / Alerta de error en ModalCobro */}
+        {toastError && (
+          <div
+            role="alert"
+            aria-live="assertive"
+            className="fixed bottom-6 right-6 z-[9999999] bg-red-600 text-white px-4 py-3 rounded-xl shadow-2xl flex items-center gap-2.5 animate-bounce-once text-sm font-semibold border border-red-400"
+          >
+            <AlertTriangle className="w-4 h-4 shrink-0 text-white" />
+            <span>{toastError}</span>
+            <button
+              type="button"
+              onClick={() => setToastError(null)}
+              className="ml-2 text-white/80 hover:text-white text-xs p-1 rounded-md cursor-pointer"
+              aria-label="Cerrar notificación"
+            >
+              ✕
+            </button>
+          </div>
+        )}
 
       </div>
     </div>

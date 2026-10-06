@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
+import { supabase } from '../../lib/supabaseClient';
 import LogoPadel from '../../components/LogoPadel';
 import { Lock, Mail, ArrowLeft, LogIn, AlertCircle, Eye, EyeOff, MessageCircle } from 'lucide-react';
 
 export default function Login() {
-  const { login, user, loading } = useAuth();
+  const { user, loading } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -30,16 +31,35 @@ export default function Login() {
     setEnviando(true);
 
     try {
-      await login(email, password);
-      navigate(destino, { replace: true });
+      const { data, error: authError } = await supabase.auth.signInWithPassword({
+        email: email.trim(),
+        password,
+      });
+
+      if (authError) {
+        const errorMsg = authError.message || '';
+        if (errorMsg.includes('Invalid login credentials')) {
+          setError('El correo electrónico o la contraseña son incorrectos. Verifica tus datos en Supabase.');
+        } else if (errorMsg.includes('Email not confirmed')) {
+          setError('Debes confirmar tu correo electrónico antes de ingresar.');
+        } else {
+          setError('Error al iniciar sesión. Por favor, verifica tus datos o intenta nuevamente.');
+        }
+        return;
+      }
+
+      if (data?.session || data?.user) {
+        navigate(destino, { replace: true });
+      }
     } catch (err) {
-      console.error('Error de login:', err);
-      // Mensajes genéricos: no revelamos si el email existe o no
-      setError(
-        err?.message === 'Invalid login credentials'
-          ? 'Credenciales incorrectas. Revisá el email y la contraseña.'
-          : err?.message || 'No se pudo iniciar sesión. Intentá nuevamente.'
-      );
+      const errorMsg = err?.message || '';
+      if (errorMsg.includes('Invalid login credentials')) {
+        setError('El correo electrónico o la contraseña son incorrectos. Verifica tus datos en Supabase.');
+      } else if (errorMsg.includes('Email not confirmed')) {
+        setError('Debes confirmar tu correo electrónico antes de ingresar.');
+      } else {
+        setError('Error al iniciar sesión. Por favor, verifica tus datos o intenta nuevamente.');
+      }
     } finally {
       setEnviando(false);
     }

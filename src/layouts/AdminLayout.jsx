@@ -248,6 +248,15 @@ export default function AdminLayout() {
     return () => window.removeEventListener('licencia_actualizada', handleLicenciaUpdate);
   }, []);
 
+  // Auto-descartar alerta de cancelación después de 6 segundos
+  useEffect(() => {
+    if (!alertaCancelado) return;
+    const timer = setTimeout(() => {
+      setAlertaCancelado(null);
+    }, 6000);
+    return () => clearTimeout(timer);
+  }, [alertaCancelado]);
+
   // Combinamos la prop del contexto con el estado local de respaldo
   const torneosDesbloqueado = configuracionClub?.modulos_activos?.torneos || licenciaTorneosActivaLocal;
 
@@ -331,11 +340,18 @@ export default function AdminLayout() {
           let cancelledTurno = null;
           
           if (payload.eventType === 'DELETE') {
-            cancelledTurno = payload.old || {};
+            if (payload.old?.hora_inicio || payload.old?.cliente_nombre || payload.old?.cancha_id) {
+              cancelledTurno = payload.old;
+            }
           } else if (payload.eventType === 'UPDATE') {
             const nuevoEstado = payload.new?.estado?.toLowerCase();
-            if (nuevoEstado === 'cancelado' || nuevoEstado === 'disponible' || !payload.new?.titular) {
-              cancelledTurno = payload.new || {};
+            const viejoEstado = payload.old?.estado?.toLowerCase();
+
+            // El aviso de "¡TURNO CANCELADO!" SOLO se dispara cuando el nuevo estado es 'cancelado'
+            // y el estado anterior no era 'cancelado'.
+            // NUNCA ante cambios de cantidad de jugadores, precios o pagos.
+            if (nuevoEstado === 'cancelado' && viejoEstado !== 'cancelado') {
+              cancelledTurno = payload.new;
             }
           }
 

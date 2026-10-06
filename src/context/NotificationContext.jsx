@@ -204,11 +204,12 @@ export function NotificationProvider({ children }) {
             // alert(`🎾 ¡Nuevo Turno Reservado!\nCliente: ${payload.new.cliente_nombre || payload.new.cliente_apellido || 'Nuevo'}\nHora: ${payload.new.hora_inicio || ''}`);
           } 
           // 2. TURNO CANCELADO
-          else if (payload.eventType === 'UPDATE' && payload.new.estado === 'cancelado') {
-            // solo notificar si antes no estaba cancelado
-            if (payload.old.estado !== 'cancelado') {
+          else if (payload.eventType === 'UPDATE') {
+            const nuevoEstado = payload.new?.estado?.toLowerCase();
+            const viejoEstado = payload.old?.estado?.toLowerCase();
+            // Solo notificar si el nuevo estado es cancelado y antes no estaba cancelado
+            if (nuevoEstado === 'cancelado' && viejoEstado !== 'cancelado') {
               agregarNotificacion(payload.new, 'cancel');
-              // alert(`❌ Turno Cancelado\nSe liberó la cancha a las ${payload.new.hora_inicio || ''} hs.`);
             }
           } 
           // 3. TURNO ELIMINADO
